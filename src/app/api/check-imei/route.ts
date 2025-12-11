@@ -108,6 +108,10 @@ export async function POST(req: Request) {
       fresh.userCost = body.cost;
     }
 
+    const resultJson = JSON.parse(
+      JSON.stringify(fresh),
+    ) as Prisma.InputJsonValue;
+
     await prisma.lookup.create({
       data: {
         imei,
@@ -115,7 +119,7 @@ export async function POST(req: Request) {
         status: fresh.status,
         price: fresh.providerPrice ?? null,
         balance: fresh.providerBalanceAfter ?? null,
-        resultJson: fresh,
+        resultJson,
       },
     });
     logStep("db-write");
