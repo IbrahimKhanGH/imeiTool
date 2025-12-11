@@ -59,6 +59,10 @@ export const appendToSheet = async (
     const sheets = await getSheetsClient();
     const spreadsheetId = ensureEnv(env.googleSheetsId, "GOOGLE_SHEETS_ID");
     const lockStatus = simplifyLockStatus(info.simLock);
+    const costDisplay =
+      typeof info.userCost === "number" && Number.isFinite(info.userCost)
+        ? `$${info.userCost}`
+        : "";
 
     await sheets.spreadsheets.values.append({
       spreadsheetId,
@@ -71,7 +75,7 @@ export const appendToSheet = async (
             info.storage ?? "", // Storage
             info.userGrade ?? "", // Grade (user-supplied)
             info.imei, // IMEI
-            info.userCost ?? "", // Our cost (user-supplied)
+            costDisplay, // Our cost (user-supplied)
             info.carrier ?? "", // Carrier
             lockStatus, // Lock Status
             formatDateForSheet(info.checkedAt), // Date scanned

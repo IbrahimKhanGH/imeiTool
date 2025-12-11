@@ -185,11 +185,19 @@ export default function Home() {
     setError(null);
 
     try {
+      const parsedCost = (() => {
+        const raw = userCost.trim();
+        if (!raw) return undefined;
+        const normalized = raw.replace(/^\$/, "").replace(/,/g, "");
+        const n = Number(normalized);
+        return Number.isFinite(n) ? n : undefined;
+      })();
+
       const requestBody = {
         imei: trimmed,
         serviceId: serviceId || undefined,
         grade: userGrade || undefined,
-        cost: userCost ? Number(userCost) : undefined,
+        cost: parsedCost,
       };
 
       const response = await fetch("/api/check-imei", {
@@ -296,14 +304,20 @@ export default function Home() {
                 >
                   Grade (optional)
                 </label>
-                <input
+                <select
                   id="grade"
                   name="grade"
-                  placeholder="A / B / C / Sealed"
                   value={userGrade}
                   onChange={(e) => setUserGrade(e.target.value)}
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/40 shadow-inner shadow-black/10 focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40"
-                />
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white shadow-inner shadow-black/10 focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40"
+                >
+                  <option value="">Select grade</option>
+                  <option value="NEW">NEW</option>
+                  <option value="OB">OB</option>
+                  <option value="A">A</option>
+                  <option value="B">B</option>
+                  <option value="C">C</option>
+                </select>
               </div>
               <div>
                 <label
@@ -315,10 +329,9 @@ export default function Home() {
                 <input
                   id="cost"
                   name="cost"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="e.g. 120.00"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="e.g. $120 or 120.00"
                   value={userCost}
                   onChange={(e) => setUserCost(e.target.value)}
                   className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/40 shadow-inner shadow-black/10 focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40"
