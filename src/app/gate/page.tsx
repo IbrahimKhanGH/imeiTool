@@ -20,7 +20,8 @@ const setToken = async (formData: FormData) => {
     redirect(`/gate?error=invalid&redirect=${encodeURIComponent(redirectTo)}`);
   }
 
-  cookies().set("app_token", token, {
+  const cookieStore = await cookies();
+  cookieStore.set("app_token", token, {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
