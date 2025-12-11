@@ -38,6 +38,7 @@ export type NormalizedDeviceInfo = {
   manufacturer?: string;
   modelName?: string;
   modelCode?: string;
+  storage?: string;
   description?: string;
   fmiStatus?: string;
   icloudLock?: string;
