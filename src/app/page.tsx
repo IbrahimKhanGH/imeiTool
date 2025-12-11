@@ -189,6 +189,7 @@ export default function Home() {
         const raw = userCost.trim();
         if (!raw) return undefined;
         const normalized = raw.replace(/^\$/, "").replace(/,/g, "");
+        if (!normalized || normalized === ".") return undefined;
         const n = Number(normalized);
         return Number.isFinite(n) ? n : undefined;
       })();
