@@ -73,7 +73,7 @@ export default function Home() {
   const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>(
     curatedServiceOptions,
   );
-  const [serviceId, setServiceId] = useState(DEFAULT_SERVICE_ID);
+  const [serviceId, setServiceId] = useState<string>(DEFAULT_SERVICE_ID);
   const [userGrade, setUserGrade] = useState("");
   const [userCost, setUserCost] = useState<string>("");
   const [pending, setPending] = useState(false);
