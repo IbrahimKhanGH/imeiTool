@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 type GatePageProps = {
-  searchParams: { redirect?: string };
+  searchParams: { redirect?: string; error?: string };
 };
 
 const APP_TOKEN = process.env.APP_ACCESS_TOKEN;
