@@ -85,6 +85,7 @@ export default function Home() {
   );
   const [recent, setRecent] = useState<RecentLookup[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const autoSubmitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedServiceMeta = useMemo(() => {
     const curated = Object.values(SICKW_SERVICES).find(
@@ -116,6 +117,14 @@ export default function Home() {
     fetchRecent();
     inputRef.current?.focus();
   }, [fetchRecent]);
+
+  useEffect(() => {
+    return () => {
+      if (autoSubmitTimer.current) {
+        clearTimeout(autoSubmitTimer.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const decodeHtml = (value: string) => {
@@ -246,20 +255,26 @@ export default function Home() {
     await runLookup(imei.trim());
   };
 
-  const handleImeiChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImeiChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const raw = event.target.value;
     const digits = sanitizeImei(raw);
     setImei(digits);
     setError(null);
 
+    if (autoSubmitTimer.current) {
+      clearTimeout(autoSubmitTimer.current);
+    }
+
     if (digits.length >= 14 && digits.length <= 17) {
-      if (isValidImei(digits)) {
-        await runLookup(digits);
-      } else {
-        setError("Not an IMEI. Please rescan.");
-        setImei("");
-        inputRef.current?.focus();
-      }
+      autoSubmitTimer.current = setTimeout(async () => {
+        if (isValidImei(digits)) {
+          await runLookup(digits);
+        } else {
+          setError("Not an IMEI. Please rescan.");
+          setImei("");
+          inputRef.current?.focus();
+        }
+      }, 200);
     }
   };
 
