@@ -48,6 +48,54 @@ const simplifyLockStatus = (value?: string): string => {
   return value;
 };
 
+const formatDailySheetTitle = (iso: string): string => {
+  const date = new Date(iso);
+  return date.toLocaleString("en-US", {
+    timeZone: "America/Chicago",
+    month: "long",
+    day: "numeric",
+  });
+};
+
+const ensureSheetExists = async (
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  title: string,
+  headers: string[],
+) => {
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties.title",
+  });
+
+  const exists = meta.data.sheets?.some(
+    (sheet) => sheet.properties?.title === title,
+  );
+
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            addSheet: {
+              properties: { title },
+            },
+          },
+        ],
+      },
+    });
+
+    // Seed headers on the new sheet
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `'${title}'!A1`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [headers] },
+    });
+  }
+};
+
 export const appendToSheet = async (
   info: NormalizedDeviceInfo,
 ): Promise<void> => {
@@ -63,10 +111,23 @@ export const appendToSheet = async (
       typeof info.userCost === "number" && Number.isFinite(info.userCost)
         ? `$${info.userCost}`
         : "";
+    const sheetTitle = formatDailySheetTitle(info.checkedAt);
+    const headers = [
+      "Product",
+      "Storage",
+      "Grade",
+      "IMEI/SN",
+      "Cost",
+      "Carrier",
+      "Lock Status",
+      "Date",
+    ];
+
+    await ensureSheetExists(sheets, spreadsheetId, sheetTitle, headers);
 
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: "A1",
+      range: `'${sheetTitle}'!A1`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: [
