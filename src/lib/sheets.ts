@@ -50,11 +50,12 @@ const simplifyLockStatus = (value?: string): string => {
 
 const formatDailySheetTitle = (iso: string): string => {
   const date = new Date(iso);
-  return date.toLocaleString("en-US", {
+  const title = date.toLocaleString("en-US", {
     timeZone: "America/Chicago",
     month: "long",
     day: "numeric",
   });
+  return title.toUpperCase();
 };
 
 const ensureSheetExists = async (
