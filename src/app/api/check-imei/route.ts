@@ -89,6 +89,17 @@ export async function POST(req: Request) {
     if (cached?.resultJson) {
       const data = cached.resultJson as NormalizedDeviceInfo;
       const hydrated = rehydrateNormalized(data, serviceId);
+
+      if (typeof body.grade === "string") {
+        hydrated.userGrade = body.grade.trim() || hydrated.userGrade;
+      }
+      if (typeof body.cost === "number" && !Number.isNaN(body.cost)) {
+        hydrated.userCost = body.cost;
+      }
+
+      await appendToSheet(hydrated);
+      logStep("cache-hit-sheets-append");
+
       const payload: CheckImeiResponse = { source: "cache", data: hydrated };
       logStep("cache-hit-return");
       return NextResponse.json(payload);
