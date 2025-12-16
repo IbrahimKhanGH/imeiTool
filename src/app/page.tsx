@@ -8,6 +8,7 @@ import type {
   NormalizedDeviceInfo,
   RecentLookup,
 } from "@/types/imei";
+import { isValidImei, sanitizeImei } from "@/lib/imei";
 
 const resultFields: Array<{
   label: string;
@@ -173,10 +174,20 @@ export default function Home() {
     loadServices();
   }, []);
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const trimmed = imei.trim();
-    if (!trimmed) {
+  const parseCostInput = (): number | undefined => {
+    const raw = userCost.trim();
+    if (!raw) return undefined;
+    const normalized = raw.replace(/^\$/, "").replace(/,/g, "");
+    if (!normalized || normalized === ".") return undefined;
+    const n = Number(normalized);
+    return Number.isFinite(n) ? n : undefined;
+  };
+
+  const runLookup = async (imeiValue: string) => {
+    if (pending) return;
+
+    const sanitized = sanitizeImei(imeiValue);
+    if (!sanitized) {
       setError("Please enter an IMEI.");
       return;
     }
@@ -185,17 +196,10 @@ export default function Home() {
     setError(null);
 
     try {
-      const parsedCost = (() => {
-        const raw = userCost.trim();
-        if (!raw) return undefined;
-        const normalized = raw.replace(/^\$/, "").replace(/,/g, "");
-        if (!normalized || normalized === ".") return undefined;
-        const n = Number(normalized);
-        return Number.isFinite(n) ? n : undefined;
-      })();
+      const parsedCost = parseCostInput();
 
       const requestBody = {
-        imei: trimmed,
+        imei: sanitized,
         serviceId: serviceId || undefined,
         grade: userGrade || undefined,
         cost: parsedCost,
@@ -221,7 +225,6 @@ export default function Home() {
       setResult(payload.data);
       setSource(payload.source);
       setImei("");
-      // Keep grade/cost sticky to ease batch scanning
       inputRef.current?.focus();
       fetchRecent();
     } catch (err) {
@@ -231,6 +234,32 @@ export default function Home() {
       setError(err instanceof Error ? err.message : "Lookup failed.");
     } finally {
       setPending(false);
+    }
+  };
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!imei.trim()) {
+      setError("Please enter an IMEI.");
+      return;
+    }
+    await runLookup(imei.trim());
+  };
+
+  const handleImeiChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = event.target.value;
+    const digits = sanitizeImei(raw);
+    setImei(digits);
+    setError(null);
+
+    if (digits.length >= 14 && digits.length <= 17) {
+      if (isValidImei(digits)) {
+        await runLookup(digits);
+      } else {
+        setError("Not an IMEI. Please rescan.");
+        setImei("");
+        inputRef.current?.focus();
+      }
     }
   };
 
@@ -290,12 +319,12 @@ export default function Home() {
                   maxLength={17}
                   placeholder="Scan or type IMEI..."
                   value={imei}
-                  onChange={(event) => setImei(event.target.value)}
+                  onChange={handleImeiChange}
                   className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-lg tracking-wide text-white placeholder:text-white/40 shadow-inner shadow-black/20 focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40"
                 />
                 <p className="mt-2 text-xs text-slate-400">
-                  Hardware scanners that emulate keyboards can type the IMEI and
-                  press Enter to submit.
+                  Scans auto-run when a valid IMEI is detected; invalid scans clear so you
+                  can rescan immediately.
                 </p>
               </div>
               <div>
