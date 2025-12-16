@@ -28,3 +28,10 @@ body {
 * {
   box-sizing: border-box;
 }
+
+/* Ensure native select dropdown options are readable on dark theme */
+select option,
+select optgroup {
+  background-color: #0b1220;
+  color: #e2e8f0;
+}
