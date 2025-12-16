@@ -111,7 +111,10 @@ export const appendToSheet = async (
       typeof info.userCost === "number" && Number.isFinite(info.userCost)
         ? `$${info.userCost}`
         : "";
-    const sheetTitle = formatDailySheetTitle(info.checkedAt);
+    const sheetTitle =
+      env.googleSheetsTab && env.googleSheetsTab.trim().length > 0
+        ? env.googleSheetsTab.trim()
+        : formatDailySheetTitle(info.checkedAt);
     const headers = [
       "Product",
       "Storage",

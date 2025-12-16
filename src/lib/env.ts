@@ -5,6 +5,7 @@ type EnvMap = {
   GOOGLE_SHEETS_ID?: string;
   GOOGLE_SERVICE_ACCOUNT_EMAIL?: string;
   GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?: string;
+  GOOGLE_SHEETS_TAB?: string;
 };
 
 const DEFAULT_SICKW_BASE_URL = "https://sickw.com/api.php";
@@ -25,6 +26,7 @@ export const env = {
   googleServiceAccountEmail: get("GOOGLE_SERVICE_ACCOUNT_EMAIL") ?? "",
   googleServiceAccountPrivateKey:
     get("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY") ?? "",
+  googleSheetsTab: get("GOOGLE_SHEETS_TAB") ?? "",
 } as const;
 
 export const isSheetsConfigured = (): boolean =>
