@@ -89,6 +89,21 @@ type BatchResponse = {
   results: BatchResult[];
 };
 
+type QueueStatus = "pending" | "running" | "success" | "error";
+
+type QueueJob = {
+  id: string;
+  input: string;
+  serialMode: boolean;
+  serviceId?: string;
+  grade?: string;
+  cost?: number;
+  status: QueueStatus;
+  source?: CheckImeiResponse["source"];
+  result?: NormalizedDeviceInfo;
+  error?: string;
+};
+
 export default function Home() {
   const [imei, setImei] = useState("");
   const [serialMode, setSerialMode] = useState(false);
@@ -98,7 +113,6 @@ export default function Home() {
   const [serviceId, setServiceId] = useState<string>(DEFAULT_SERVICE_ID);
   const [userGrade, setUserGrade] = useState("");
   const [userCost, setUserCost] = useState<string>("");
-  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<NormalizedDeviceInfo | null>(null);
   const [source, setSource] = useState<CheckImeiResponse["source"] | null>(
@@ -111,6 +125,9 @@ export default function Home() {
   const [batchResults, setBatchResults] = useState<BatchResult[]>([]);
   const [batchPending, setBatchPending] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
+  const [queue, setQueue] = useState<QueueJob[]>([]);
+  const [activeCount, setActiveCount] = useState(0);
+  const CONCURRENCY = 1;
 
   const selectedServiceMeta = useMemo(() => {
     const curated = Object.values(SICKW_SERVICES).find(
@@ -254,9 +271,7 @@ export default function Home() {
     return Number.isFinite(n) ? n : undefined;
   };
 
-  const runLookup = async (imeiValue: string) => {
-    if (pending || batchPending) return;
-
+  const enqueueLookup = (imeiValue: string) => {
     const sanitized = serialMode ? imeiValue.trim() : sanitizeImei(imeiValue);
     if (!sanitized) {
       setError(serialMode ? "Please enter a serial." : "Please enter an IMEI.");
@@ -267,51 +282,122 @@ export default function Home() {
       setError("Not an IMEI. Please rescan.");
       return;
     }
-
-    setPending(true);
-    setError(null);
-
-    try {
-      const parsedCost = parseCostInput();
-
-      const requestBody = {
-        imei: sanitized,
-        serviceId: serviceId || undefined,
-        grade: userGrade || undefined,
-        cost: parsedCost,
-        serialMode,
-      };
-
-      const response = await fetch("/api/check-imei", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const payload = (await response
-          .json()
-          .catch(() => ({}))) as ApiErrorResponse;
-        const message = payload.error ?? "Lookup failed.";
-        throw new Error(
-          payload.code ? `${message} (${payload.code})` : message,
-        );
-      }
-
-      const payload = (await response.json()) as CheckImeiResponse;
-      setResult(payload.data);
-      setSource(payload.source);
-      setImei("");
-      inputRef.current?.focus();
-      fetchRecent();
-    } catch (err) {
-      console.error(err);
-      setResult(null);
-      setSource(null);
-      setError(err instanceof Error ? err.message : "Lookup failed.");
-    } finally {
-      setPending(false);
+    if (serialMode && (sanitized.length < 5 || sanitized.length > 40)) {
+      setError("Please enter a valid serial (5-40 characters).");
+      return;
     }
+
+    const parsedCost = parseCostInput();
+    const job: QueueJob = {
+      id:
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `job-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      input: sanitized,
+      serialMode,
+      serviceId: serviceId || undefined,
+      grade: userGrade || undefined,
+      cost: parsedCost,
+      status: "pending",
+    };
+
+    setQueue((current) => [...current, job]);
+    setImei("");
+    setError(null);
+    inputRef.current?.focus();
+  };
+
+  const runJob = useCallback(
+    async (job: QueueJob) => {
+      setQueue((items) =>
+        items.map((item) =>
+          item.id === job.id
+            ? { ...item, status: "running", error: undefined }
+            : item,
+        ),
+      );
+      setActiveCount((count) => count + 1);
+
+      try {
+        const response = await fetch("/api/check-imei", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imei: job.input,
+            serviceId: job.serviceId || undefined,
+            grade: job.grade || undefined,
+            cost: job.cost,
+            serialMode: job.serialMode,
+          }),
+        });
+
+        if (!response.ok) {
+          const payload = (await response
+            .json()
+            .catch(() => ({}))) as ApiErrorResponse;
+          const message = payload.error ?? "Lookup failed.";
+          throw new Error(
+            payload.code ? `${message} (${payload.code})` : message,
+          );
+        }
+
+        const payload = (await response.json()) as CheckImeiResponse;
+        setResult(payload.data);
+        setSource(payload.source);
+        setError(null);
+        fetchRecent();
+
+        setQueue((items) =>
+          items.map((item) =>
+            item.id === job.id
+              ? {
+                  ...item,
+                  status: "success",
+                  result: payload.data,
+                  source: payload.source,
+                }
+              : item,
+          ),
+        );
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Lookup failed. Please retry.";
+        setError(message);
+        setResult(null);
+        setSource(null);
+        setQueue((items) =>
+          items.map((item) =>
+            item.id === job.id
+              ? { ...item, status: "error", error: message }
+              : item,
+          ),
+        );
+      } finally {
+        setActiveCount((count) => Math.max(0, count - 1));
+      }
+    },
+    [fetchRecent],
+  );
+
+  useEffect(() => {
+    if (activeCount >= CONCURRENCY) return;
+    const next = queue.find((item) => item.status === "pending");
+    if (!next) return;
+    runJob(next);
+  }, [queue, activeCount, runJob, CONCURRENCY]);
+
+  const retryJob = (id: string) => {
+    setQueue((items) =>
+      items.map((item) =>
+        item.id === id
+          ? { ...item, status: "pending", error: undefined, result: undefined }
+          : item,
+      ),
+    );
+  };
+
+  const removeJob = (id: string) => {
+    setQueue((items) => items.filter((item) => item.id !== id));
   };
 
   const runBatch = async () => {
@@ -371,7 +457,7 @@ export default function Home() {
       setError(serialMode ? "Please enter a serial." : "Please enter an IMEI.");
       return;
     }
-    await runLookup(imei.trim());
+    enqueueLookup(imei.trim());
   };
 
   const handleImeiChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -387,7 +473,7 @@ export default function Home() {
     if (!serialMode && nextValue.length >= 14 && nextValue.length <= 17) {
       autoSubmitTimer.current = setTimeout(async () => {
         if (isValidImei(nextValue)) {
-          await runLookup(nextValue);
+          enqueueLookup(nextValue);
         } else {
           setError("Not an IMEI. Please rescan.");
           setImei("");
@@ -581,10 +667,10 @@ export default function Home() {
               </div>
               <button
                 type="submit"
-                disabled={pending}
+                disabled={false}
                 className="w-full rounded-2xl bg-gradient-to-r from-fuchsia-500 via-purple-500 to-indigo-500 px-6 py-3 text-lg font-semibold text-white shadow-lg shadow-fuchsia-500/40 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
               >
-                {pending ? "Checking..." : "Run Lookup"}
+                Add to queue
               </button>
             </div>
           </form>
@@ -595,7 +681,103 @@ export default function Home() {
           )}
         </section>
 
-            <section className="rounded-3xl border border-white/10 bg-slate-900/50 p-6 shadow-2xl shadow-indigo-500/10 backdrop-blur md:p-8">
+        {queue.length > 0 && (
+          <section className="rounded-3xl border border-white/10 bg-slate-900/50 p-6 shadow-2xl shadow-indigo-500/10 backdrop-blur md:p-8">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-200/80">
+                  Lookup queue
+                </p>
+                <h2 className="text-2xl font-semibold text-white">
+                  Pending and recent jobs
+                </h2>
+                <p className="text-sm text-slate-300">
+                  Keep scanning—jobs run in the background. IMEI/serial input clears after
+                  enqueue; grade/cost/service stay.
+                </p>
+              </div>
+              <div className="text-right text-xs text-slate-400">
+                <div>{activeCount} running</div>
+                <div>
+                  {queue.filter((item) => item.status === "pending").length} pending
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3">
+              {queue.map((item) => {
+                const badgeStyles =
+                  item.status === "success"
+                    ? "bg-emerald-500/15 text-emerald-100 border border-emerald-500/30"
+                    : item.status === "running"
+                      ? "bg-amber-500/15 text-amber-100 border border-amber-500/30"
+                      : item.status === "error"
+                        ? "bg-rose-500/15 text-rose-100 border border-rose-500/30"
+                        : "bg-white/5 text-slate-100 border border-white/10";
+
+                return (
+                  <div
+                    key={item.id}
+                    className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-inner shadow-black/20"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-col">
+                        <div className="text-xs uppercase tracking-wide text-slate-400">
+                          {item.serialMode ? "Serial" : "IMEI"}
+                        </div>
+                        <div className="font-mono text-sm text-white">
+                          {item.input}
+                        </div>
+                      </div>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeStyles}`}
+                      >
+                        {item.status}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-300">
+                      <span>
+                        {item.serviceId
+                          ? `Service #${item.serviceId}`
+                          : "Default service"}
+                      </span>
+                      {item.grade && <span>Grade {item.grade}</span>}
+                      {typeof item.cost === "number" && (
+                        <span>Cost ${item.cost.toFixed(2)}</span>
+                      )}
+                      {item.source && <span>Source {item.source}</span>}
+                    </div>
+                    {item.error && (
+                      <p className="mt-2 text-xs text-rose-200">{item.error}</p>
+                    )}
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                      {item.status === "error" && (
+                        <button
+                          type="button"
+                          onClick={() => retryJob(item.id)}
+                          className="rounded-full border border-white/20 px-3 py-1 text-white hover:border-white/40"
+                        >
+                          Retry
+                        </button>
+                      )}
+                      {item.status !== "running" && (
+                        <button
+                          type="button"
+                          onClick={() => removeJob(item.id)}
+                          className="rounded-full border border-white/20 px-3 py-1 text-slate-200 hover:border-white/40"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        <section className="rounded-3xl border border-white/10 bg-slate-900/50 p-6 shadow-2xl shadow-indigo-500/10 backdrop-blur md:p-8">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-200/80">
