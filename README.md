@@ -76,3 +76,4 @@ The dashboard lets you:
 | `npm run build` | Production build |
 | `npm run prisma:migrate` | Run Prisma migrations |
 | `npm run prisma:generate` | Regenerate the Prisma client |
+| `npm install` | Also runs `prisma generate` via postinstall |
