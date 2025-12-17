@@ -7,6 +7,7 @@ import type {
   CheckImeiResponse,
   NormalizedDeviceInfo,
   RecentLookup,
+  SickWErrorCode,
 } from "@/types/imei";
 import { isValidImei, sanitizeImei } from "@/lib/imei";
 
@@ -69,6 +70,25 @@ const formatDate = (value: string) =>
     minute: "2-digit",
   });
 
+type BatchResult =
+  | {
+      imei: string;
+      ok: true;
+      source: CheckImeiResponse["source"];
+      data: NormalizedDeviceInfo;
+    }
+  | {
+      imei: string;
+      ok: false;
+      error: string;
+      code?: SickWErrorCode;
+    };
+
+type BatchResponse = {
+  count: number;
+  results: BatchResult[];
+};
+
 export default function Home() {
   const [imei, setImei] = useState("");
   const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>(
@@ -86,6 +106,10 @@ export default function Home() {
   const [recent, setRecent] = useState<RecentLookup[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const autoSubmitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [batchText, setBatchText] = useState("");
+  const [batchResults, setBatchResults] = useState<BatchResult[]>([]);
+  const [batchPending, setBatchPending] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
 
   const selectedServiceMeta = useMemo(() => {
     const curated = Object.values(SICKW_SERVICES).find(
@@ -183,6 +207,27 @@ export default function Home() {
     loadServices();
   }, []);
 
+  const batchImeis = useMemo(() => {
+    const matches = batchText.match(/\d+/g) ?? [];
+    const dedup = new Set<string>();
+    matches.forEach((chunk) => {
+      const digits = sanitizeImei(chunk);
+      if (digits) {
+        dedup.add(digits);
+      }
+    });
+    return Array.from(dedup);
+  }, [batchText]);
+
+  const batchValidImeis = useMemo(
+    () => batchImeis.filter((value) => isValidImei(value)),
+    [batchImeis],
+  );
+  const batchInvalidImeis = useMemo(
+    () => batchImeis.filter((value) => !isValidImei(value)),
+    [batchImeis],
+  );
+
   const parseCostInput = (): number | undefined => {
     const raw = userCost.trim();
     if (!raw) return undefined;
@@ -193,7 +238,7 @@ export default function Home() {
   };
 
   const runLookup = async (imeiValue: string) => {
-    if (pending) return;
+    if (pending || batchPending) return;
 
     const sanitized = sanitizeImei(imeiValue);
     if (!sanitized) {
@@ -243,6 +288,56 @@ export default function Home() {
       setError(err instanceof Error ? err.message : "Lookup failed.");
     } finally {
       setPending(false);
+    }
+  };
+
+  const runBatch = async () => {
+    if (batchPending) return;
+
+    if (batchImeis.length === 0) {
+      setBatchError("Paste one IMEI per line (up to 50).");
+      return;
+    }
+
+    if (batchImeis.length > 50) {
+      setBatchError("Batch limit is 50 IMEIs per request.");
+      return;
+    }
+
+    setBatchPending(true);
+    setBatchError(null);
+    setBatchResults([]);
+
+    try {
+      const parsedCost = parseCostInput();
+      const payload = {
+        imeis: batchImeis,
+        serviceId: serviceId || undefined,
+        grade: userGrade || undefined,
+        cost: parsedCost,
+      };
+
+      const response = await fetch("/api/check-imei/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(data.error ?? "Batch lookup failed.");
+      }
+
+      const data = (await response.json()) as BatchResponse;
+      setBatchResults(data.results);
+      fetchRecent();
+    } catch (err) {
+      console.error(err);
+      setBatchError(err instanceof Error ? err.message : "Batch lookup failed.");
+    } finally {
+      setBatchPending(false);
     }
   };
 
@@ -455,6 +550,148 @@ export default function Home() {
             </p>
           )}
         </section>
+
+            <section className="rounded-3xl border border-white/10 bg-slate-900/50 p-6 shadow-2xl shadow-indigo-500/10 backdrop-blur md:p-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-200/80">
+                    Batch paste
+                  </p>
+                  <h2 className="text-2xl font-semibold text-white">
+                    Run up to 50 IMEIs in one go
+                  </h2>
+                  <p className="text-sm text-slate-300">
+                    We sanitize, dedupe, and Luhn-check before sending to SickW. Invalid
+                    IMEIs are reported inline.
+                  </p>
+                </div>
+                <div className="text-right text-xs text-slate-400">
+                  <div>{batchValidImeis.length} valid</div>
+                  <div>{batchInvalidImeis.length} invalid</div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-[2fr_1fr]">
+                <textarea
+                  value={batchText}
+                  onChange={(e) => setBatchText(e.target.value)}
+                  rows={8}
+                  placeholder="Paste IMEIs here, one per line or separated by commas/spaces..."
+                  className="w-full rounded-2xl border border-white/10 bg-black/40 p-4 text-sm text-white shadow-inner shadow-black/30 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                />
+                <div className="flex h-full flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs uppercase tracking-wide text-slate-400">
+                      Ready to submit
+                    </span>
+                    <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold">
+                      {batchImeis.length} IMEIs
+                    </span>
+                  </div>
+                  {batchInvalidImeis.length > 0 && (
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-amber-100">
+                      <p className="text-xs font-semibold uppercase tracking-wide">
+                        Invalid (Luhn failed)
+                      </p>
+                      <p className="mt-1 break-words text-xs">
+                        {batchInvalidImeis.slice(0, 5).join(", ")}
+                        {batchInvalidImeis.length > 5 ? " …" : ""}
+                      </p>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    disabled={batchPending || batchImeis.length === 0 || batchImeis.length > 50}
+                    onClick={runBatch}
+                    className="w-full rounded-xl bg-gradient-to-r from-indigo-500 via-blue-500 to-cyan-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {batchPending
+                      ? "Running batch..."
+                      : `Run batch (${Math.min(batchImeis.length, 50)} IMEIs)`}
+                  </button>
+                  <p className="text-xs text-slate-400">
+                    We process sequentially with a small delay to avoid rate limits. Cache hits
+                    still append to Sheets.
+                  </p>
+                  {batchError && (
+                    <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-100">
+                      {batchError}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {batchResults.length > 0 && (
+                <div className="mt-6 overflow-x-auto">
+                  <table className="min-w-full text-left text-sm text-white/90">
+                    <thead>
+                      <tr className="text-xs uppercase tracking-wide text-slate-400">
+                        <th className="py-2 pr-4">IMEI</th>
+                        <th className="py-2 pr-4">Result</th>
+                        <th className="py-2 pr-4">Service</th>
+                        <th className="py-2 pr-4">Model</th>
+                        <th className="py-2 pr-4">Carrier</th>
+                        <th className="py-2 pr-4">Blacklist</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {batchResults.map((entry, idx) => {
+                        if (entry.ok) {
+                          return (
+                            <tr
+                              key={`${entry.imei}-${idx}`}
+                              className="border-t border-white/5 text-slate-200"
+                            >
+                              <td className="py-2 pr-4 font-mono text-xs text-white">
+                                {entry.imei}
+                              </td>
+                              <td className="py-2 pr-4">
+                                <span
+                                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                    entry.source === "cache"
+                                      ? "bg-emerald-400/10 text-emerald-200"
+                                      : "bg-blue-400/10 text-blue-200"
+                                  }`}
+                                >
+                                  {entry.source === "cache" ? "cache" : "live"}
+                                </span>
+                              </td>
+                              <td className="py-2 pr-4">
+                                {entry.data.serviceName ?? `#${entry.data.serviceId}`}
+                              </td>
+                              <td className="py-2 pr-4">
+                                {entry.data.modelName ?? entry.data.description ?? "—"}
+                              </td>
+                              <td className="py-2 pr-4">{entry.data.carrier ?? "—"}</td>
+                              <td className="py-2 pr-4">
+                                {entry.data.blacklistStatus ?? "Unknown"}
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return (
+                          <tr
+                            key={`${entry.imei}-${idx}`}
+                            className="border-t border-white/5 text-slate-200"
+                          >
+                            <td className="py-2 pr-4 font-mono text-xs text-white">
+                              {entry.imei}
+                            </td>
+                            <td className="py-2 pr-4" colSpan={5}>
+                              <span className="rounded-full bg-red-500/20 px-3 py-1 text-xs font-semibold text-red-200">
+                                {entry.error}
+                                {entry.code ? ` (${entry.code})` : ""}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
 
         {result && (
           <section className="rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-2xl shadow-indigo-500/10 backdrop-blur md:p-8">

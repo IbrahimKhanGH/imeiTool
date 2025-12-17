@@ -38,7 +38,7 @@ export const SICKW_SERVICES = {
     name: "iPhone Carrier & FMI & Blacklist",
     description:
       "Carrier, FMI, and blacklist info for iPhones (instant).",
-    price: "0.10",
+    price: "0.07",
   },
 } as const;
 
