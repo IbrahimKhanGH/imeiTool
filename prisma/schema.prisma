@@ -17,6 +17,8 @@ model Lookup {
   status     String
   price      Float?
   balance    Float?
+  userGrade  String?
+  userCost   Float?
   resultJson Json
   createdAt  DateTime @default(now())
 
