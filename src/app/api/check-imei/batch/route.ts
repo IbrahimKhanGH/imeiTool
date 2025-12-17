@@ -45,7 +45,11 @@ export async function POST(req: Request) {
     const cleaned = Array.from(
       new Set(
         rawImeis
-          .map((value) => sanitizeImei(String(value ?? "")))
+          .map((value) =>
+            body.serialMode
+              ? String(value ?? "").trim().toUpperCase()
+              : sanitizeImei(String(value ?? "")),
+          )
           .filter(Boolean),
       ),
     );
@@ -64,12 +68,21 @@ export async function POST(req: Request) {
     for (let i = 0; i < cleaned.length; i += 1) {
       const candidate = cleaned[i];
 
-      if (!isValidImei(candidate)) {
+      if (!body.serialMode && !isValidImei(candidate)) {
         results.push({
           imei: candidate,
           ok: false,
           error: "Please enter a valid IMEI (14-17 digits, passing Luhn).",
           code: "E01_INVALID_IMEI",
+        });
+        continue;
+      }
+      if (body.serialMode && (candidate.length < 5 || candidate.length > 40)) {
+        results.push({
+          imei: candidate,
+          ok: false,
+          error: "Please enter a valid serial (5-40 characters).",
+          code: "E02_INVALID_SN",
         });
         continue;
       }
@@ -130,4 +143,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
 

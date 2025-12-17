@@ -91,6 +91,7 @@ type BatchResponse = {
 
 export default function Home() {
   const [imei, setImei] = useState("");
+  const [serialMode, setSerialMode] = useState(false);
   const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>(
     curatedServiceOptions,
   );
@@ -208,25 +209,41 @@ export default function Home() {
   }, []);
 
   const batchImeis = useMemo(() => {
-    const matches = batchText.match(/\d+/g) ?? [];
     const dedup = new Set<string>();
-    matches.forEach((chunk) => {
-      const digits = sanitizeImei(chunk);
-      if (digits) {
-        dedup.add(digits);
-      }
-    });
+    if (serialMode) {
+      batchText
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .forEach((line) => dedup.add(line));
+    } else {
+      const matches = batchText.match(/\d+/g) ?? [];
+      matches.forEach((chunk) => {
+        const digits = sanitizeImei(chunk);
+        if (digits) {
+          dedup.add(digits);
+        }
+      });
+    }
     return Array.from(dedup);
-  }, [batchText]);
+  }, [batchText, serialMode]);
 
-  const batchValidImeis = useMemo(
-    () => batchImeis.filter((value) => isValidImei(value)),
-    [batchImeis],
-  );
-  const batchInvalidImeis = useMemo(
-    () => batchImeis.filter((value) => !isValidImei(value)),
-    [batchImeis],
-  );
+  const batchValidImeis = useMemo(() => {
+    if (serialMode) {
+      return batchImeis.filter(
+        (value) => value.length >= 5 && value.length <= 40,
+      );
+    }
+    return batchImeis.filter((value) => isValidImei(value));
+  }, [batchImeis, serialMode]);
+  const batchInvalidImeis = useMemo(() => {
+    if (serialMode) {
+      return batchImeis.filter(
+        (value) => value.length < 5 || value.length > 40,
+      );
+    }
+    return batchImeis.filter((value) => !isValidImei(value));
+  }, [batchImeis, serialMode]);
 
   const parseCostInput = (): number | undefined => {
     const raw = userCost.trim();
@@ -240,9 +257,14 @@ export default function Home() {
   const runLookup = async (imeiValue: string) => {
     if (pending || batchPending) return;
 
-    const sanitized = sanitizeImei(imeiValue);
+    const sanitized = serialMode ? imeiValue.trim() : sanitizeImei(imeiValue);
     if (!sanitized) {
-      setError("Please enter an IMEI.");
+      setError(serialMode ? "Please enter a serial." : "Please enter an IMEI.");
+      return;
+    }
+
+    if (!serialMode && !isValidImei(sanitized)) {
+      setError("Not an IMEI. Please rescan.");
       return;
     }
 
@@ -257,6 +279,7 @@ export default function Home() {
         serviceId: serviceId || undefined,
         grade: userGrade || undefined,
         cost: parsedCost,
+        serialMode,
       };
 
       const response = await fetch("/api/check-imei", {
@@ -315,6 +338,7 @@ export default function Home() {
         serviceId: serviceId || undefined,
         grade: userGrade || undefined,
         cost: parsedCost,
+        serialMode,
       };
 
       const response = await fetch("/api/check-imei/batch", {
@@ -344,7 +368,7 @@ export default function Home() {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!imei.trim()) {
-      setError("Please enter an IMEI.");
+      setError(serialMode ? "Please enter a serial." : "Please enter an IMEI.");
       return;
     }
     await runLookup(imei.trim());
@@ -352,18 +376,18 @@ export default function Home() {
 
   const handleImeiChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const raw = event.target.value;
-    const digits = sanitizeImei(raw);
-    setImei(digits);
+    const nextValue = serialMode ? raw : sanitizeImei(raw);
+    setImei(nextValue);
     setError(null);
 
     if (autoSubmitTimer.current) {
       clearTimeout(autoSubmitTimer.current);
     }
 
-    if (digits.length >= 14 && digits.length <= 17) {
+    if (!serialMode && nextValue.length >= 14 && nextValue.length <= 17) {
       autoSubmitTimer.current = setTimeout(async () => {
-        if (isValidImei(digits)) {
-          await runLookup(digits);
+        if (isValidImei(nextValue)) {
+          await runLookup(nextValue);
         } else {
           setError("Not an IMEI. Please rescan.");
           setImei("");
@@ -416,7 +440,7 @@ export default function Home() {
                   htmlFor="imei"
                   className="mb-2 block text-sm font-medium text-slate-200"
                 >
-                  IMEI Number
+                  IMEI or Serial
                 </label>
                 <input
                   id="imei"
@@ -424,18 +448,38 @@ export default function Home() {
                   ref={inputRef}
                   autoFocus
                   autoComplete="off"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={17}
-                  placeholder="Scan or type IMEI..."
+                  inputMode={serialMode ? "text" : "numeric"}
+                  pattern={serialMode ? undefined : "[0-9]*"}
+                  maxLength={serialMode ? 40 : 17}
+                  placeholder={
+                    serialMode ? "Type or paste serial..." : "Scan or type IMEI..."
+                  }
                   value={imei}
                   onChange={handleImeiChange}
                   className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-lg tracking-wide text-white placeholder:text-white/40 shadow-inner shadow-black/20 focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40"
                 />
-                <p className="mt-2 text-xs text-slate-400">
-                  Scans auto-run when a valid IMEI is detected; invalid scans clear so you
-                  can rescan immediately.
-                </p>
+                <div className="mt-2 flex flex-col gap-1 text-xs text-slate-400 md:flex-row md:items-center md:justify-between">
+                  <p>
+                    {serialMode
+                      ? "Serial mode: no Luhn check. Enter 5-40 letters/numbers."
+                      : "Scans auto-run when a valid IMEI is detected; invalid scans clear so you can rescan immediately."}
+                  </p>
+                  <label className="flex items-center gap-2 text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={serialMode}
+                      onChange={(e) => {
+                        setSerialMode(e.target.checked);
+                        setImei("");
+                        setError(null);
+                      }}
+                      className="h-4 w-4 rounded border-white/30 bg-white/10 text-fuchsia-500 focus:ring-fuchsia-500/60"
+                    />
+                    <span className="text-xs uppercase tracking-wide">
+                      Serial mode
+                    </span>
+                  </label>
+                </div>
               </div>
               <div>
                 <label
@@ -475,7 +519,7 @@ export default function Home() {
                   value={userCost}
                   onChange={(e) => setUserCost(e.target.value)}
                   className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/40 shadow-inner shadow-black/10 focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40"
-                />
+        />
               </div>
               <div>
                 <label

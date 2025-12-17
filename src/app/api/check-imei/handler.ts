@@ -17,6 +17,7 @@ export type RequestBody = {
   serviceKey?: SickWServiceKey;
   grade?: string;
   cost?: number;
+  serialMode?: boolean;
 };
 
 export const resolveServiceId = (body: RequestBody): string | undefined => {
@@ -45,17 +46,32 @@ export const processLookup = async (
 
   let imei = "";
   let serviceId: string | undefined;
+  const isSerial = Boolean(body.serialMode);
 
   try {
-    imei = sanitizeImei(body.imei ?? "");
-    if (!isValidImei(imei)) {
-      throw new SickWApiError(
-        "Please enter a valid IMEI (14-17 digits, passing Luhn).",
-        "E01_INVALID_IMEI",
-        400,
-      );
+    imei = isSerial
+      ? (body.imei ?? "").trim().toUpperCase()
+      : sanitizeImei(body.imei ?? "");
+
+    if (isSerial) {
+      if (!imei || imei.length < 5 || imei.length > 40) {
+        throw new SickWApiError(
+          "Please enter a valid serial (5-40 characters).",
+          "E02_INVALID_SN",
+          400,
+        );
+      }
+      logStep("validated-serial");
+    } else {
+      if (!isValidImei(imei)) {
+        throw new SickWApiError(
+          "Please enter a valid IMEI (14-17 digits, passing Luhn).",
+          "E01_INVALID_IMEI",
+          400,
+        );
+      }
+      logStep("validated-imei");
     }
-    logStep("validated-imei");
 
     serviceId = resolveServiceId(body);
     if (!serviceId) {
@@ -168,4 +184,5 @@ export const processLookup = async (
     );
   }
 };
+
 
