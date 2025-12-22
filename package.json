@@ -17,16 +17,16 @@
   "dependencies": {
     "@prisma/client": "^6.19.0",
     "googleapis": "^166.0.0",
-    "next-auth": "^4.24.7",
+    "next-auth": "^4.24.13",
     "bcryptjs": "^2.4.3",
     "next": "16.0.9",
-    "react": "19.0.0-rc-de68d2f4-20241204",
-    "react-dom": "19.0.0-rc-de68d2f4-20241204"
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
   },
   "devDependencies": {
     "@types/node": "^20",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
     "@types/bcryptjs": "^2.4.6",
     "eslint": "^9.11.0",
     "eslint-config-next": "16.0.9",
