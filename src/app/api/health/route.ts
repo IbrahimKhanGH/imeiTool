@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
 import { fetchSickWBalance } from "@/lib/sickw";
+import { prisma } from "@/lib/db";
 import { env, isSheetsConfigured } from "@/lib/env";
 
 type HealthStatus = "ok" | "not_configured" | "degraded" | "error";
@@ -23,6 +24,13 @@ export async function GET() {
   } = {
     status: isSheetsConfigured() ? "degraded" : "not_configured",
     tab: env.googleSheetsTab || undefined,
+  };
+
+  const db: {
+    status: HealthStatus;
+    message?: string;
+  } = {
+    status: "degraded",
   };
 
   // Check SickW balance (lightweight GET)
@@ -59,9 +67,19 @@ export async function GET() {
     }
   }
 
+  // Check DB connectivity (lightweight SELECT 1)
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    db.status = "ok";
+  } catch (error) {
+    db.status = "error";
+    db.message = error instanceof Error ? error.message : "Failed to reach DB.";
+  }
+
   return NextResponse.json({
     sickw,
     sheets,
+    db,
     serverTime: new Date().toISOString(),
     env: {
       sickwConfigured: Boolean(env.sickwApiKey),

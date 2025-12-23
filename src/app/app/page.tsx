@@ -120,6 +120,10 @@ type HealthResponse = {
     message?: string;
     tab?: string;
   };
+  db: {
+    status: HealthStatus;
+    message?: string;
+  };
   env: {
     sickwConfigured: boolean;
     sheetsConfigured: boolean;
@@ -658,6 +662,13 @@ export default function Home() {
               )}`}
             >
               Sheets {health?.sheets.status ?? "checking"}
+            </span>
+            <span
+              className={`rounded-full px-3 py-1 font-semibold ${statusBadgeClass(
+                health?.db?.status ?? "degraded",
+              )}`}
+            >
+              DB {health?.db?.status ?? "checking"}
             </span>
             {healthLoading && (
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 font-semibold text-white/80">
