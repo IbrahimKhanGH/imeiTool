@@ -104,6 +104,8 @@ type QueueJob = {
   source?: CheckImeiResponse["source"];
   result?: NormalizedDeviceInfo;
   error?: string;
+  startedAt?: number;
+  completedAt?: number;
 };
 
 type HealthStatus = "ok" | "not_configured" | "degraded" | "error";
@@ -160,6 +162,12 @@ export default function Home() {
   const [activeCount, setActiveCount] = useState(0);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
+  const [toast, setToast] = useState<{
+    id: string;
+    message: string;
+    tone: "success" | "error";
+  } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const CONCURRENCY = 1;
 
   const selectedServiceMeta = useMemo(() => {
@@ -324,6 +332,23 @@ export default function Home() {
     return Number.isFinite(n) ? n : undefined;
   };
 
+  const triggerToast = useCallback(
+    (message: string, tone: "success" | "error") => {
+      if (toastTimer.current) {
+        clearTimeout(toastTimer.current);
+      }
+      const id =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `toast-${Date.now()}`;
+      setToast({ id, message, tone });
+      toastTimer.current = setTimeout(() => {
+        setToast((current) => (current?.id === id ? null : current));
+      }, 3200);
+    },
+    [],
+  );
+
   const enqueueLookup = (imeiValue: string) => {
     const sanitized = serialMode ? imeiValue.trim() : sanitizeImei(imeiValue);
     if (!sanitized) {
@@ -352,6 +377,8 @@ export default function Home() {
       grade: userGrade || undefined,
       cost: parsedCost,
       status: "pending",
+      completedAt: undefined,
+      startedAt: undefined,
     };
 
     setQueue((current) => [...current, job]);
@@ -365,7 +392,12 @@ export default function Home() {
       setQueue((items) =>
         items.map((item) =>
           item.id === job.id
-            ? { ...item, status: "running", error: undefined }
+            ? {
+                ...item,
+                status: "running",
+                error: undefined,
+                startedAt: Date.now(),
+              }
             : item,
         ),
       );
@@ -408,10 +440,12 @@ export default function Home() {
                   status: "success",
                   result: payload.data,
                   source: payload.source,
+                  completedAt: Date.now(),
                 }
               : item,
           ),
         );
+        triggerToast(`Scan done: ${job.input}`, "success");
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Lookup failed. Please retry.";
@@ -421,15 +455,21 @@ export default function Home() {
         setQueue((items) =>
           items.map((item) =>
             item.id === job.id
-              ? { ...item, status: "error", error: message }
+              ? {
+                  ...item,
+                  status: "error",
+                  error: message,
+                  completedAt: Date.now(),
+                }
               : item,
           ),
         );
+        triggerToast(`Scan failed: ${job.input}`, "error");
       } finally {
         setActiveCount((count) => Math.max(0, count - 1));
       }
     },
-    [fetchRecent],
+    [fetchRecent, triggerToast],
   );
 
   useEffect(() => {
@@ -586,6 +626,22 @@ export default function Home() {
     }
   };
 
+  const stepPillClass = (state: "idle" | "active" | "done" | "error") => {
+    const base =
+      "rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-wide";
+    switch (state) {
+      case "active":
+        return `${base} border-indigo-400/60 bg-indigo-400/15 text-indigo-100`;
+      case "done":
+        return `${base} border-emerald-400/60 bg-emerald-400/15 text-emerald-100`;
+      case "error":
+        return `${base} border-rose-400/60 bg-rose-400/15 text-rose-100`;
+      case "idle":
+      default:
+        return `${base} border-white/10 bg-white/5 text-slate-200/70`;
+    }
+  };
+
   const userRole = (session?.user as any)?.role as string | undefined;
   const tenantId = (session?.user as any)?.tenantId as string | undefined;
 
@@ -677,6 +733,50 @@ export default function Home() {
             )}
           </div>
         </header>
+
+        <section className="rounded-3xl border border-white/10 bg-slate-900/50 p-5 shadow-2xl shadow-indigo-500/10 backdrop-blur md:p-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-200/80">
+            How a scan runs
+          </p>
+          <div className="mt-2 grid gap-3 text-sm text-slate-200 md:grid-cols-4">
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-xs font-bold text-white">
+                1
+              </span>
+              <div>
+                <p className="font-semibold text-white">Enqueue</p>
+                <p className="text-slate-300">Scan or paste; we queue instantly.</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-xs font-bold text-white">
+                2
+              </span>
+              <div>
+                <p className="font-semibold text-white">Cache check</p>
+                <p className="text-slate-300">Fast return if we already have it.</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-xs font-bold text-white">
+                3
+              </span>
+              <div>
+                <p className="font-semibold text-white">SickW lookup</p>
+                <p className="text-slate-300">Calls provider with your service choice.</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-xs font-bold text-white">
+                4
+              </span>
+              <div>
+                <p className="font-semibold text-white">Sheets mirror</p>
+                <p className="text-slate-300">Append to today’s tab with grade/cost.</p>
+              </div>
+            </div>
+          </div>
+        </section>
 
         <section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl shadow-fuchsia-500/10 backdrop-blur-md md:p-8">
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -841,102 +941,6 @@ export default function Home() {
             </p>
           )}
         </section>
-
-        {queue.length > 0 && (
-          <section className="rounded-3xl border border-white/10 bg-slate-900/50 p-6 shadow-2xl shadow-indigo-500/10 backdrop-blur md:p-8">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-200/80">
-                  Lookup queue
-                </p>
-                <h2 className="text-2xl font-semibold text-white">
-                  Pending and recent jobs
-                </h2>
-                <p className="text-sm text-slate-300">
-                  Keep scanning—jobs run in the background. IMEI/serial input clears after
-                  enqueue; grade/cost/service stay.
-                </p>
-              </div>
-              <div className="text-right text-xs text-slate-400">
-                <div>{activeCount} running</div>
-                <div>
-                  {queue.filter((item) => item.status === "pending").length} pending
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-col gap-3">
-              {queue.map((item) => {
-                const badgeStyles =
-                  item.status === "success"
-                    ? "bg-emerald-500/15 text-emerald-100 border border-emerald-500/30"
-                    : item.status === "running"
-                      ? "bg-amber-500/15 text-amber-100 border border-amber-500/30"
-                      : item.status === "error"
-                        ? "bg-rose-500/15 text-rose-100 border border-rose-500/30"
-                        : "bg-white/5 text-slate-100 border border-white/10";
-
-                return (
-                  <div
-                    key={item.id}
-                    className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-inner shadow-black/20"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-col">
-                        <div className="text-xs uppercase tracking-wide text-slate-400">
-                          {item.serialMode ? "Serial" : "IMEI"}
-                        </div>
-                        <div className="font-mono text-sm text-white">
-                          {item.input}
-                        </div>
-                      </div>
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeStyles}`}
-                      >
-                        {item.status}
-                      </span>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-300">
-                      <span>
-                        {item.serviceId
-                          ? `Service #${item.serviceId}`
-                          : "Default service"}
-                      </span>
-                      {item.grade && <span>Grade {item.grade}</span>}
-                      {typeof item.cost === "number" && (
-                        <span>Cost ${item.cost.toFixed(2)}</span>
-                      )}
-                      {item.source && <span>Source {item.source}</span>}
-                    </div>
-                    {item.error && (
-                      <p className="mt-2 text-xs text-rose-200">{item.error}</p>
-                    )}
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                      {item.status === "error" && (
-                        <button
-                          type="button"
-                          onClick={() => retryJob(item.id)}
-                          className="rounded-full border border-white/20 px-3 py-1 text-white hover:border-white/40"
-                        >
-                          Retry
-                        </button>
-                      )}
-                      {item.status !== "running" && (
-                        <button
-                          type="button"
-                          onClick={() => removeJob(item.id)}
-                          className="rounded-full border border-white/20 px-3 py-1 text-slate-200 hover:border-white/40"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
 
         <section className="rounded-3xl border border-white/10 bg-slate-900/50 p-6 shadow-2xl shadow-indigo-500/10 backdrop-blur md:p-8">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1113,6 +1117,135 @@ export default function Home() {
               )}
             </section>
 
+        {queue.length > 0 && (
+          <section className="rounded-3xl border border-white/10 bg-slate-900/50 p-6 shadow-2xl shadow-indigo-500/10 backdrop-blur md:p-8">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-200/80">
+                  Lookup queue
+                </p>
+                <h2 className="text-2xl font-semibold text-white">
+                  Pending and recent jobs
+                </h2>
+                <p className="text-sm text-slate-300">
+                  Keep scanning—jobs run in the background. IMEI/serial input clears after
+                  enqueue; grade/cost/service stay.
+                </p>
+              </div>
+              <div className="text-right text-xs text-slate-400">
+                <div>{activeCount} running</div>
+                <div>
+                  {queue.filter((item) => item.status === "pending").length} pending
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3">
+              {queue.map((item) => {
+                const badgeStyles =
+                  item.status === "success"
+                    ? "bg-emerald-500/15 text-emerald-100 border border-emerald-500/30"
+                    : item.status === "running"
+                      ? "bg-amber-500/15 text-amber-100 border border-amber-500/30"
+                      : item.status === "error"
+                        ? "bg-rose-500/15 text-rose-100 border border-rose-500/30"
+                        : "bg-white/5 text-slate-100 border border-white/10";
+
+                return (
+                  <div
+                    key={item.id}
+                    className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-inner shadow-black/20"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-col">
+                        <div className="text-xs uppercase tracking-wide text-slate-400">
+                          {item.serialMode ? "Serial" : "IMEI"}
+                        </div>
+                        <div className="font-mono text-sm text-white">
+                          {item.input}
+                        </div>
+                      </div>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeStyles}`}
+                      >
+                        {item.status}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <span
+                        className={stepPillClass(
+                          item.status === "pending"
+                            ? "active"
+                            : "done",
+                        )}
+                      >
+                        Queued
+                      </span>
+                      <span
+                        className={stepPillClass(
+                          item.status === "running"
+                            ? "active"
+                            : item.status === "success" || item.status === "error"
+                              ? "done"
+                              : "idle",
+                        )}
+                      >
+                        Running
+                      </span>
+                      <span
+                        className={stepPillClass(
+                          item.status === "success"
+                            ? "done"
+                            : item.status === "error"
+                              ? "error"
+                              : "idle",
+                        )}
+                      >
+                        Result
+                      </span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-300">
+                      <span>
+                        {item.serviceId
+                          ? `Service #${item.serviceId}`
+                          : "Default service"}
+                      </span>
+                      {item.grade && <span>Grade {item.grade}</span>}
+                      {typeof item.cost === "number" && (
+                        <span>Cost ${item.cost.toFixed(2)}</span>
+                      )}
+                      {item.source && <span>Source {item.source}</span>}
+                    </div>
+                    {item.error && (
+                      <p className="mt-2 text-xs text-rose-200">{item.error}</p>
+                    )}
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                      {item.status === "error" && (
+                        <button
+                          type="button"
+                          onClick={() => retryJob(item.id)}
+                          className="rounded-full border border-white/20 px-3 py-1 text-white hover:border-white/40"
+                        >
+                          Retry
+                        </button>
+                      )}
+                      {item.status !== "running" && (
+                        <button
+                          type="button"
+                          onClick={() => removeJob(item.id)}
+                          className="rounded-full border border-white/20 px-3 py-1 text-slate-200 hover:border-white/40"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         {result && (
           <section className="rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-2xl shadow-indigo-500/10 backdrop-blur md:p-8">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1260,6 +1393,19 @@ export default function Home() {
           )}
         </section>
       </main>
+      {toast && (
+        <div className="fixed bottom-4 right-4 z-50">
+          <div
+            className={`rounded-2xl border px-4 py-3 text-sm shadow-2xl backdrop-blur ${
+              toast.tone === "success"
+                ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-50"
+                : "border-rose-400/40 bg-rose-500/15 text-rose-50"
+            }`}
+          >
+            {toast.message}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
