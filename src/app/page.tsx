@@ -122,7 +122,7 @@ export default function LandingPage() {
             >
               Log in
             </Link>
-          </div>
+        </div>
         </section>
       </main>
     </div>

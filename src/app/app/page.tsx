@@ -138,7 +138,8 @@ export default function Home() {
   );
   const [serviceId, setServiceId] = useState<string>(DEFAULT_SERVICE_ID);
   const [userGrade, setUserGrade] = useState("");
-  const [userCost, setUserCost] = useState<string>("");
+  const [singleCost, setSingleCost] = useState<string>("");
+  const [batchCost, setBatchCost] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<NormalizedDeviceInfo | null>(null);
   const [source, setSource] = useState<CheckImeiResponse["source"] | null>(
@@ -271,23 +272,17 @@ export default function Home() {
   }, []);
 
   const batchImeis = useMemo(() => {
-    const dedup = new Set<string>();
     if (serialMode) {
-      batchText
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .forEach((line) => dedup.add(line));
-    } else {
-      const matches = batchText.match(/\d+/g) ?? [];
-      matches.forEach((chunk) => {
-        const digits = sanitizeImei(chunk);
-        if (digits) {
-          dedup.add(digits);
-        }
-      });
+      return batchText
+        .split(/\r?\n/)
+        .map((line) => line.trim().toUpperCase())
+        .filter(Boolean);
     }
-    return Array.from(dedup);
+
+    const matches = batchText.match(/\d+/g) ?? [];
+    return matches
+      .map((chunk) => sanitizeImei(chunk))
+      .filter((digits): digits is string => Boolean(digits));
   }, [batchText, serialMode]);
 
   const batchValidImeis = useMemo(() => {
@@ -307,8 +302,17 @@ export default function Home() {
     return batchImeis.filter((value) => !isValidImei(value));
   }, [batchImeis, serialMode]);
 
-  const parseCostInput = (): number | undefined => {
-    const raw = userCost.trim();
+  const parseSingleCostInput = (): number | undefined => {
+    const raw = singleCost.trim();
+    if (!raw) return undefined;
+    const normalized = raw.replace(/^\$/, "").replace(/,/g, "");
+    if (!normalized || normalized === ".") return undefined;
+    const n = Number(normalized);
+    return Number.isFinite(n) ? n : undefined;
+  };
+
+  const parseBatchCostInput = (): number | undefined => {
+    const raw = batchCost.trim();
     if (!raw) return undefined;
     const normalized = raw.replace(/^\$/, "").replace(/,/g, "");
     if (!normalized || normalized === ".") return undefined;
@@ -332,7 +336,7 @@ export default function Home() {
       return;
     }
 
-    const parsedCost = parseCostInput();
+    const parsedCost = parseSingleCostInput();
     const job: QueueJob = {
       id:
         typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -463,7 +467,7 @@ export default function Home() {
     setBatchResults([]);
 
     try {
-      const parsedCost = parseCostInput();
+      const parsedCost = parseBatchCostInput();
       const payload = {
         imeis: batchImeis,
         serviceId: serviceId || undefined,
@@ -507,7 +511,13 @@ export default function Home() {
 
   const handleImeiChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const raw = event.target.value;
-    const nextValue = serialMode ? raw : sanitizeImei(raw);
+    let nextValue = serialMode ? raw.toUpperCase() : sanitizeImei(raw);
+
+    if (!serialMode && nextValue.length > 17) {
+      // Clamp to the latest 17 digits to avoid concatenated scans.
+      nextValue = nextValue.slice(-17);
+    }
+
     setImei(nextValue);
     setError(null);
 
@@ -525,6 +535,21 @@ export default function Home() {
           inputRef.current?.focus();
         }
       }, 200);
+    } else if (serialMode) {
+      const len = nextValue.trim().length;
+
+      if (len > 40) {
+        setError("Please enter a valid serial (5-40 characters).");
+        setImei("");
+        inputRef.current?.focus();
+        return;
+      }
+
+      if (len >= 5) {
+        autoSubmitTimer.current = setTimeout(() => {
+          enqueueLookup(nextValue.trim());
+        }, 200);
+      }
     }
   };
 
@@ -570,13 +595,13 @@ export default function Home() {
         <header className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-2xl shadow-fuchsia-500/10 backdrop-blur">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-fuchsia-200/80">
-                imeiTool
-              </p>
-              <h1 className="text-4xl font-semibold tracking-tight text-white md:text-5xl">
-                Instant IMEI intake workspace
-              </h1>
-              <p className="text-base text-slate-300 md:w-3/4">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-fuchsia-200/80">
+            imeiTool
+          </p>
+          <h1 className="text-4xl font-semibold tracking-tight text-white md:text-5xl">
+            Instant IMEI intake workspace
+          </h1>
+          <p className="text-base text-slate-300 md:w-3/4">
                 Scan devices, run SickW instant checks, keep a local cache, and mirror into Google
                 Sheets—without exposing provider keys.
               </p>
@@ -727,8 +752,8 @@ export default function Home() {
                   type="text"
                   inputMode="decimal"
                   placeholder="e.g. $120 or 120.00"
-                  value={userCost}
-                  onChange={(e) => setUserCost(e.target.value)}
+                  value={singleCost}
+                  onChange={(e) => setSingleCost(e.target.value)}
                   className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/40 shadow-inner shadow-black/10 focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40"
         />
               </div>
@@ -947,13 +972,13 @@ export default function Home() {
                 </span>
                 <input
                   type="text"
-                  value={userCost}
-                  onChange={(e) => setUserCost(e.target.value)}
+                  value={batchCost}
+                  onChange={(e) => setBatchCost(e.target.value)}
                   placeholder="$"
                   className="w-28 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white placeholder:text-white/40 shadow-inner shadow-black/10 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                 />
               </label>
-            </div>
+              </div>
 
               <div className="mt-4 grid gap-4 md:grid-cols-[2fr_1fr]">
                 <textarea
