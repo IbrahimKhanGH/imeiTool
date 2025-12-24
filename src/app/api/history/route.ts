@@ -98,6 +98,7 @@ export async function GET(req: Request) {
       purchaseCountry: true,
       checkedAt: true,
       createdAt: true,
+      resultJson: true,
     } as any,
   });
 

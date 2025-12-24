@@ -20,6 +20,7 @@ type HistoryRecord = {
   purchaseCountry?: string | null;
   checkedAt: string;
   createdAt: string;
+  resultJson?: any;
 };
 
 type HistoryResponse = {
@@ -57,6 +58,8 @@ export default function HistoryPage() {
   const [serialOnly, setSerialOnly] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [rawOpen, setRawOpen] = useState<HistoryRecord | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -143,98 +146,111 @@ export default function HistoryPage() {
         </header>
 
         <section className="rounded-3xl border border-white/10 bg-slate-900/60 p-5 shadow-2xl shadow-indigo-500/10 backdrop-blur">
-          <div className="grid gap-3 md:grid-cols-4 sticky top-4 z-10 bg-slate-900/80 backdrop-blur rounded-2xl p-3 border border-white/5">
-            <input
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                resetCursor();
-              }}
-              placeholder="Search IMEI/serial/model/carrier"
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/50 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-            />
-            <select
-              value={status}
-              onChange={(e) => {
-                setStatus(e.target.value);
-                resetCursor();
-              }}
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-            >
-              <option value="">Status: any</option>
-              {statusOptions.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-            <select
-              value={grade}
-              onChange={(e) => {
-                setGrade(e.target.value);
-                resetCursor();
-              }}
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-            >
-              <option value="">Grade: any</option>
-              {gradeOptions.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
-            <input
-              value={carrier}
-              onChange={(e) => {
-                setCarrier(e.target.value);
-                resetCursor();
-              }}
-              placeholder="Carrier contains..."
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/50 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-            />
-            <input
-              value={model}
-              onChange={(e) => {
-                setModel(e.target.value);
-                resetCursor();
-              }}
-              placeholder="Model contains..."
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/50 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-            />
-            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
+          <div className="sticky top-4 z-10 rounded-2xl border border-white/5 bg-slate-900/80 p-3 backdrop-blur">
+            <div className="grid gap-3 md:grid-cols-4">
               <input
-                type="checkbox"
-                checked={serialOnly}
+                value={search}
                 onChange={(e) => {
-                  setSerialOnly(e.target.checked);
+                  setSearch(e.target.value);
                   resetCursor();
                 }}
-                className="h-4 w-4 rounded border-white/30 bg-white/10 text-indigo-500 focus:ring-indigo-500/60"
+                placeholder="Search IMEI/serial/model/carrier"
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/50 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
               />
-              <span className="text-xs uppercase tracking-wide text-slate-300">
-                Serial only
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="date"
-                value={startDate}
+              <select
+                value={status}
                 onChange={(e) => {
-                  setStartDate(e.target.value);
+                  setStatus(e.target.value);
                   resetCursor();
                 }}
                 className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-              />
-              <input
-                type="date"
-                value={endDate}
+              >
+                <option value="">Status: any</option>
+                {statusOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={grade}
                 onChange={(e) => {
-                  setEndDate(e.target.value);
+                  setGrade(e.target.value);
                   resetCursor();
                 }}
                 className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-              />
+              >
+                <option value="">Grade: any</option>
+                {gradeOptions.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+              <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
+                <input
+                  type="checkbox"
+                  checked={serialOnly}
+                  onChange={(e) => {
+                    setSerialOnly(e.target.checked);
+                    resetCursor();
+                  }}
+                  className="h-4 w-4 rounded border-white/30 bg-white/10 text-indigo-500 focus:ring-indigo-500/60"
+                />
+                <span className="text-xs uppercase tracking-wide text-slate-300">
+                  Serial only
+                </span>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="mt-3 text-xs font-semibold text-indigo-200 hover:text-white"
+            >
+              {showAdvanced ? "Hide advanced filters" : "Show advanced filters"}
+            </button>
+            {showAdvanced && (
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <input
+                  value={carrier}
+                  onChange={(e) => {
+                    setCarrier(e.target.value);
+                    resetCursor();
+                  }}
+                  placeholder="Carrier contains..."
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/50 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                />
+                <input
+                  value={model}
+                  onChange={(e) => {
+                    setModel(e.target.value);
+                    resetCursor();
+                  }}
+                  placeholder="Model contains..."
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/50 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => {
+                      setStartDate(e.target.value);
+                      resetCursor();
+                    }}
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                  />
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => {
+                      setEndDate(e.target.value);
+                      resetCursor();
+                    }}
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-300">
@@ -281,6 +297,7 @@ export default function HistoryPage() {
                   <th className="px-3 py-2">Lock/Blacklist</th>
                   <th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2">Checked</th>
+                  <th className="px-3 py-2">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -317,6 +334,15 @@ export default function HistoryPage() {
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-300">
                       {formatDate(row.checkedAt || row.createdAt)}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setRawOpen(row)}
+                        className="rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-[11px] font-semibold text-white hover:border-white/30 hover:bg-white/10"
+                      >
+                        View raw
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -358,6 +384,37 @@ export default function HistoryPage() {
             </div>
           </div>
         </section>
+
+        {rawOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur">
+            <div className="max-h-[80vh] w-full max-w-3xl overflow-auto rounded-2xl border border-white/10 bg-slate-900/90 p-6 shadow-2xl shadow-indigo-500/20">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-indigo-200/80">Raw payload</p>
+                  <h3 className="text-xl font-semibold text-white">
+                    {rawOpen.imei}
+                    {rawOpen.serial ? " (SN)" : ""}
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Service #{rawOpen.serviceId} · {rawOpen.serviceName ?? "Unknown"} · {formatDate(rawOpen.checkedAt || rawOpen.createdAt)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRawOpen(null)}
+                  className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs font-semibold text-white hover:border-white/40 hover:bg-white/10"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="mt-4 overflow-auto rounded-xl border border-white/10 bg-black/60 p-4 text-xs text-emerald-200">
+                <pre className="whitespace-pre-wrap">
+                  {JSON.stringify(rawOpen.resultJson ?? rawOpen, null, 2)}
+                </pre>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
