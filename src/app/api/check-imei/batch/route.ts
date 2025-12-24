@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
 import { isValidImei, sanitizeImei } from "@/lib/imei";
 import { SickWApiError } from "@/lib/sickw";
 import { processLookup, type RequestBody } from "../handler";
 import type { SickWErrorCode, CheckImeiResponse } from "@/types/imei";
+import { authOptions } from "@/lib/auth";
 
 type BatchBody = RequestBody & {
   imeis?: string[];
@@ -30,6 +32,14 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function POST(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+    const tenantId = (session?.user as any)?.tenantId;
+    const userId = (session?.user as any)?.id;
+
+    if (!session || !tenantId || !userId) {
+      return jsonError("Unauthorized", 401, "UNKNOWN");
+    }
+
     let body: BatchBody;
     try {
       body = (await req.json()) as BatchBody;
@@ -93,6 +103,7 @@ export async function POST(req: Request) {
             ...body,
             imei: candidate,
           },
+          { tenantId, userId },
           { logPrefix: "check-imei-batch" },
         );
 

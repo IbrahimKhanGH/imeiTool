@@ -10,6 +10,7 @@ import type {
 } from "@/types/imei";
 import type { Prisma } from "@prisma/client";
 import { env } from "@/lib/env";
+import { decryptField } from "@/lib/crypto";
 
 export type RequestBody = {
   imei?: string;
@@ -18,6 +19,11 @@ export type RequestBody = {
   grade?: string;
   cost?: number;
   serialMode?: boolean;
+};
+
+type LookupContext = {
+  tenantId: string;
+  userId: string;
 };
 
 export const resolveServiceId = (body: RequestBody): string | undefined => {
@@ -34,6 +40,7 @@ export const resolveServiceId = (body: RequestBody): string | undefined => {
 
 export const processLookup = async (
   body: RequestBody,
+  context: LookupContext,
   opts?: { now?: Date; logPrefix?: string },
 ): Promise<CheckImeiResponse> => {
   const now = opts?.now ?? new Date();
@@ -83,7 +90,7 @@ export const processLookup = async (
     }
 
     const cached = await prisma.lookup.findFirst({
-      where: { imei, serviceId, status: "success" },
+      where: { imei, serviceId, status: "success", tenantId: context.tenantId },
       orderBy: { createdAt: "desc" },
     });
     logStep("checked-cache");
@@ -99,18 +106,29 @@ export const processLookup = async (
         hydrated.userCost = body.cost;
       }
 
-      await appendToSheet(hydrated);
+      await appendToSheet(hydrated, {
+        syncToSheets: true,
+      });
       logStep("cache-hit-sheets-append");
 
       return { source: "cache", data: hydrated };
     }
 
     logStep("calling-sickw");
-    const fresh = await querySickW({
-      imei,
-      serviceId,
-      format: "beta",
+    const credential = await prisma.credential.findUnique({
+      where: { tenantId: context.tenantId },
     });
+
+    const apiKey = decryptField(credential?.sickwKeyEnc) || env.sickwApiKey;
+
+    const fresh = await querySickW(
+      {
+        imei,
+        serviceId,
+        format: "beta",
+      },
+      { apiKey },
+    );
     logStep("sickw-complete");
 
     if (typeof body.grade === "string") {
@@ -127,18 +145,38 @@ export const processLookup = async (
     await prisma.lookup.create({
       data: {
         imei,
+        serial: isSerial,
         serviceId: fresh.serviceId,
+        serviceName: fresh.serviceName ?? null,
+        source: "live",
         status: fresh.status,
         price: fresh.providerPrice ?? null,
         balance: fresh.providerBalanceAfter ?? null,
         userGrade: fresh.userGrade ?? null,
         userCost: fresh.userCost ?? null,
+        carrier: fresh.carrier ?? null,
+        modelName: fresh.modelName ?? null,
+        blacklistStatus: fresh.blacklistStatus ?? null,
+        simLock: fresh.simLock ?? null,
+        purchaseCountry: fresh.purchaseCountry ?? null,
+        checkedAt: new Date(fresh.checkedAt),
+        tenantId: context.tenantId,
+        userId: context.userId,
         resultJson,
       },
     });
     logStep("db-write");
 
-    await appendToSheet(fresh);
+    await appendToSheet(fresh, {
+      syncToSheets: credential?.syncToSheets ?? true,
+      sheetsId: decryptField(credential?.googleSheetsIdEnc) ?? undefined,
+      serviceAccountEmail:
+        decryptField(credential?.googleServiceAccountEmailEnc) ?? undefined,
+      serviceAccountPrivateKey:
+        decryptField(credential?.googleServiceAccountPrivateKeyEnc) ?? undefined,
+      tab: credential?.defaultTab ?? undefined,
+      timezone: credential?.timezone ?? "America/Chicago",
+    });
     logStep("sheets-append");
 
     return {
@@ -153,7 +191,10 @@ export const processLookup = async (
         await prisma.lookup.create({
           data: {
             imei,
+            serial: isSerial,
             serviceId: serviceId ?? env.sickwDefaultServiceId ?? "",
+            serviceName: null,
+            source: "error",
             status: "error",
             price: null,
             balance: null,
@@ -163,6 +204,14 @@ export const processLookup = async (
               typeof body.cost === "number" && !Number.isNaN(body.cost)
                 ? body.cost
                 : null,
+            carrier: null,
+            modelName: null,
+            blacklistStatus: null,
+            simLock: null,
+            purchaseCountry: null,
+            checkedAt: now,
+            tenantId: context.tenantId,
+            userId: context.userId,
             resultJson: {
               code: error.code,
               message: error.message,

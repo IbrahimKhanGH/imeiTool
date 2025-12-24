@@ -39,6 +39,29 @@ async function main() {
   } else {
     console.log(`User ${email} already exists; skipping.`);
   }
+
+  // Seed credential from env vars (plaintext for now; can encrypt later)
+  const existingCredential = await prisma.credential.findUnique({
+    where: { tenantId: tenant.id },
+  });
+
+  if (!existingCredential) {
+    await prisma.credential.create({
+      data: {
+        tenantId: tenant.id,
+        sickwKeyEnc: process.env.SICKW_API_KEY || null,
+        googleSheetsIdEnc: process.env.GOOGLE_SHEETS_ID || null,
+        googleServiceAccountEmailEnc:
+          process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || null,
+        googleServiceAccountPrivateKeyEnc:
+          process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || null,
+        defaultTab: process.env.GOOGLE_SHEETS_TAB || null,
+        timezone: "America/Chicago",
+        syncToSheets: true,
+      },
+    });
+    console.log("Seeded credential for default tenant from env vars.");
+  }
 }
 
 main()

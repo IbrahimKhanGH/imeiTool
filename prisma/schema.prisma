@@ -22,6 +22,7 @@ model Tenant {
   createdAt   DateTime      @default(now())
   memberships Membership[]
   lookups     Lookup[]
+  credential  Credential?
 }
 
 model Membership {
@@ -40,19 +41,45 @@ model Membership {
 model Lookup {
   id         Int       @id @default(autoincrement())
   imei       String
+  serial     Boolean   @default(false)
   serviceId  String
+  serviceName String?
+  source     String?   // cache | live | error
   status     String
   price      Float?
   balance    Float?
   userGrade  String?
   userCost   Float?
-  tenantId   String?
-  userId     String?
+  carrier    String?
+  modelName  String?
+  blacklistStatus String?
+  simLock    String?
+  purchaseCountry String?
+  checkedAt  DateTime  @default(now())
+  tenantId   String
+  userId     String
   resultJson Json
   createdAt  DateTime  @default(now())
 
-  tenant Tenant? @relation(fields: [tenantId], references: [id])
-  user   User?   @relation(fields: [userId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
 
   @@index([imei, serviceId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, imei])
+}
+
+model Credential {
+  id                              String   @id @default(cuid())
+  tenant                          Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId                        String   @unique
+  sickwKeyEnc                     String?
+  googleSheetsIdEnc               String?
+  googleServiceAccountEmailEnc    String?
+  googleServiceAccountPrivateKeyEnc String?
+  defaultTab                      String?
+  timezone                        String?  @default("America/Chicago")
+  syncToSheets                    Boolean  @default(true)
+  createdAt                       DateTime @default(now())
+  updatedAt                       DateTime @updatedAt
 }

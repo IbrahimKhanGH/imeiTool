@@ -2,33 +2,38 @@ import { google, sheets_v4 } from "googleapis";
 import type { NormalizedDeviceInfo } from "@/types/imei";
 import { ensureEnv, env, isSheetsConfigured } from "./env";
 
-let sheetsClient: sheets_v4.Sheets | null = null;
+export type SheetsConfig = {
+  syncToSheets?: boolean;
+  sheetsId?: string;
+  serviceAccountEmail?: string;
+  serviceAccountPrivateKey?: string;
+  tab?: string;
+  timezone?: string;
+};
 
-const getSheetsClient = async (): Promise<sheets_v4.Sheets> => {
-  if (sheetsClient) {
-    return sheetsClient;
-  }
-
-  const email = ensureEnv(
-    env.googleServiceAccountEmail,
-    "GOOGLE_SERVICE_ACCOUNT_EMAIL",
-  );
-  const privateKey = ensureEnv(
-    env.googleServiceAccountPrivateKey,
-    "GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY",
-  ).replace(/\\n/g, "\n");
+const getSheetsClient = async (
+  config?: SheetsConfig,
+): Promise<sheets_v4.Sheets> => {
+  const email =
+    config?.serviceAccountEmail ??
+    ensureEnv(env.googleServiceAccountEmail, "GOOGLE_SERVICE_ACCOUNT_EMAIL");
+  const privateKey =
+    config?.serviceAccountPrivateKey ??
+    ensureEnv(
+      env.googleServiceAccountPrivateKey,
+      "GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY",
+    );
 
   const auth = new google.auth.JWT({
     email,
-    key: privateKey,
+    key: privateKey.replace(/\\n/g, "\n"),
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
 
-  sheetsClient = google.sheets({ version: "v4", auth });
-  return sheetsClient;
+  return google.sheets({ version: "v4", auth });
 };
 
-const formatDateForSheet = (iso: string): string => {
+const formatDateForSheet = (iso: string, timezone?: string): string => {
   const date = new Date(iso);
   return date.toLocaleString("en-US", {
     month: "short",
@@ -36,7 +41,7 @@ const formatDateForSheet = (iso: string): string => {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: "America/Chicago",
+    timeZone: timezone ?? "America/Chicago",
   });
 };
 
@@ -48,10 +53,10 @@ const simplifyLockStatus = (value?: string): string => {
   return value;
 };
 
-const formatDailySheetTitle = (iso: string): string => {
+const formatDailySheetTitle = (iso: string, timezone?: string): string => {
   const date = new Date(iso);
   const title = date.toLocaleString("en-US", {
-    timeZone: "America/Chicago",
+    timeZone: timezone ?? "America/Chicago",
     month: "long",
     day: "numeric",
   });
@@ -99,23 +104,35 @@ const ensureSheetExists = async (
 
 export const appendToSheet = async (
   info: NormalizedDeviceInfo,
+  config?: SheetsConfig,
 ): Promise<void> => {
-  if (!isSheetsConfigured() || info.status !== "success") {
+  const shouldSync = config?.syncToSheets ?? true;
+  const sheetsId = config?.sheetsId ?? env.googleSheetsId;
+  const saEmail = config?.serviceAccountEmail ?? env.googleServiceAccountEmail;
+  const saKey =
+    config?.serviceAccountPrivateKey ?? env.googleServiceAccountPrivateKey;
+
+  if (
+    !shouldSync ||
+    info.status !== "success" ||
+    !(sheetsId && saEmail && saKey)
+  ) {
     return;
   }
 
   try {
-    const sheets = await getSheetsClient();
-    const spreadsheetId = ensureEnv(env.googleSheetsId, "GOOGLE_SHEETS_ID");
+    const sheets = await getSheetsClient(config);
+    const spreadsheetId = sheetsId;
     const lockStatus = simplifyLockStatus(info.simLock);
     const costDisplay =
       typeof info.userCost === "number" && Number.isFinite(info.userCost)
         ? `$${info.userCost}`
         : "";
     const sheetTitle =
-      env.googleSheetsTab && env.googleSheetsTab.trim().length > 0
-        ? env.googleSheetsTab.trim()
-        : formatDailySheetTitle(info.checkedAt);
+      (config?.tab && config.tab.trim().length > 0
+        ? config.tab.trim()
+        : formatDailySheetTitle(info.checkedAt, config?.timezone)) ||
+      formatDailySheetTitle(info.checkedAt, config?.timezone);
     const headers = [
       "Product",
       "Storage",
@@ -143,7 +160,7 @@ export const appendToSheet = async (
             costDisplay, // Our cost (user-supplied)
             info.carrier ?? "", // Carrier
             lockStatus, // Lock Status
-            formatDateForSheet(info.checkedAt), // Date scanned
+            formatDateForSheet(info.checkedAt, config?.timezone), // Date scanned
           ],
         ],
       },

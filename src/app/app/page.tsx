@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { SICKW_SERVICES } from "@/config/sickwServices";
 import type {
   ApiErrorResponse,
@@ -108,33 +107,6 @@ type QueueJob = {
   completedAt?: number;
 };
 
-type HealthStatus = "ok" | "not_configured" | "degraded" | "error";
-
-type HealthResponse = {
-  sickw: {
-    status: HealthStatus;
-    message?: string;
-    balance?: number | null;
-    defaultServiceId?: string;
-  };
-  sheets: {
-    status: HealthStatus;
-    message?: string;
-    tab?: string;
-  };
-  db: {
-    status: HealthStatus;
-    message?: string;
-  };
-  env: {
-    sickwConfigured: boolean;
-    sheetsConfigured: boolean;
-    defaultServiceId: string | null;
-    timezone: string;
-  };
-  serverTime: string;
-};
-
 export default function Home() {
   const { data: session } = useSession();
   const [imei, setImei] = useState("");
@@ -152,6 +124,12 @@ export default function Home() {
     null,
   );
   const [recent, setRecent] = useState<RecentLookup[]>([]);
+  const [seen, setSeen] = useState<{
+    lastDate: string;
+    grade?: string;
+    cost?: number | null;
+    count: number;
+  } | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const autoSubmitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [batchText, setBatchText] = useState("");
@@ -160,8 +138,6 @@ export default function Home() {
   const [batchError, setBatchError] = useState<string | null>(null);
   const [queue, setQueue] = useState<QueueJob[]>([]);
   const [activeCount, setActiveCount] = useState(0);
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [healthLoading, setHealthLoading] = useState(false);
   const [toast, setToast] = useState<{
     id: string;
     message: string;
@@ -196,27 +172,11 @@ export default function Home() {
     }
   }, []);
 
-  const fetchHealth = useCallback(async () => {
-    setHealthLoading(true);
-    try {
-      const response = await fetch("/api/health", { cache: "no-store" });
-      if (!response.ok) return;
-      const payload = (await response.json()) as HealthResponse;
-      setHealth(payload);
-    } catch (err) {
-      console.warn("Health check failed", err);
-    } finally {
-      setHealthLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     fetchRecent();
-    fetchHealth();
     inputRef.current?.focus();
-    const interval = setInterval(fetchHealth, 60_000);
-    return () => clearInterval(interval);
-  }, [fetchRecent, fetchHealth]);
+    return undefined;
+  }, [fetchRecent]);
 
   useEffect(() => {
     return () => {
@@ -225,6 +185,60 @@ export default function Home() {
       }
     };
   }, []);
+
+  // Seen-before chip
+  useEffect(() => {
+    if (!imei) {
+      setSeen(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const candidate = serialMode ? imei.trim().toUpperCase() : sanitizeImei(imei);
+        if (!candidate) {
+          setSeen(null);
+          return;
+        }
+        if (!serialMode && !isValidImei(candidate)) {
+          setSeen(null);
+          return;
+        }
+
+        const res = await fetch(
+          `/api/history/seen?imei=${encodeURIComponent(candidate)}&limit=5`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        if (!res.ok) {
+          setSeen(null);
+          return;
+        }
+        const data = await res.json();
+        const records = (data?.data as any[]) ?? [];
+        if (!records.length) {
+          setSeen(null);
+          return;
+        }
+        const last = records[0];
+        setSeen({
+          lastDate: last.checkedAt || last.createdAt,
+          grade: last.userGrade ?? undefined,
+          cost: last.userCost ?? null,
+          count: records.length,
+        });
+      } catch (err) {
+        if (!(err instanceof DOMException && err.name === "AbortError")) {
+          setSeen(null);
+        }
+      }
+    }, 250);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [imei, serialMode]);
 
   useEffect(() => {
     const decodeHtml = (value: string) => {
@@ -612,20 +626,6 @@ export default function Home() {
     return price;
   };
 
-  const statusBadgeClass = (status: HealthStatus) => {
-    switch (status) {
-      case "ok":
-        return "bg-emerald-500/15 text-emerald-100 border border-emerald-500/30";
-      case "degraded":
-        return "bg-amber-500/15 text-amber-100 border border-amber-500/30";
-      case "not_configured":
-        return "bg-white/10 text-slate-200 border border-white/10";
-      case "error":
-      default:
-        return "bg-rose-500/15 text-rose-100 border border-rose-500/30";
-    }
-  };
-
   const stepPillClass = (state: "idle" | "active" | "done" | "error") => {
     const base =
       "rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-wide";
@@ -642,19 +642,10 @@ export default function Home() {
     }
   };
 
-  const userRole = (session?.user as any)?.role as string | undefined;
-  const tenantId = (session?.user as any)?.tenantId as string | undefined;
-
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-50">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-48 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-fuchsia-500/30 blur-[140px]" />
-        <div className="absolute bottom-0 right-[-10%] h-80 w-80 rounded-full bg-blue-500/20 blur-[120px]" />
-      </div>
-      <main className="relative mx-auto flex max-w-6xl flex-col gap-10 px-6 py-12 md:px-10 md:py-16">
-        <header className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-2xl shadow-fuchsia-500/10 backdrop-blur">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="space-y-2">
+    <div className="flex flex-col gap-8 md:py-2">
+      <header className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-2xl shadow-fuchsia-500/10 backdrop-blur">
+        <div className="space-y-2 pb-1">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-fuchsia-200/80">
             imeiTool
           </p>
@@ -662,125 +653,16 @@ export default function Home() {
             Instant IMEI intake workspace
           </h1>
           <p className="text-base text-slate-300 md:w-3/4">
-                Scan devices, run SickW instant checks, keep a local cache, and mirror into Google
-                Sheets—without exposing provider keys.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Link
-                href="/app/profile"
-                className="rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-xs font-semibold text-white/90 hover:border-white/40 hover:bg-white/10"
-              >
-                Profile
-              </Link>
-              <Link
-                href="/app/settings"
-                className="rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-xs font-semibold text-white/90 hover:border-white/40 hover:bg-white/10"
-              >
-                Settings
-              </Link>
-              <button
-                type="button"
-                onClick={() => signOut({ callbackUrl: "/login" })}
-                className="rounded-xl border border-white/30 bg-white/5 px-3 py-2 text-xs font-semibold text-white/90 shadow-inner shadow-black/10 transition hover:border-white/50 hover:bg-white/10"
-              >
-                Log out
-              </button>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
-            <span className="rounded-full bg-white/5 px-3 py-1 font-semibold text-white">
-              {session?.user?.email ?? "Account"}
-            </span>
-            {userRole && (
-              <span className="rounded-full bg-white/5 px-3 py-1 font-semibold text-white/80">
-                Role: {userRole}
-              </span>
-            )}
-            {tenantId && (
-              <span className="rounded-full bg-white/5 px-3 py-1 font-semibold text-white/80">
-                Tenant: {tenantId.slice(0, 8)}…
-              </span>
-            )}
-            <span
-              className={`rounded-full px-3 py-1 font-semibold ${statusBadgeClass(
-                health?.sickw.status ?? "degraded",
-              )}`}
-            >
-              SickW {health?.sickw.status ?? "checking"}
-              {typeof health?.sickw.balance === "number"
-                ? ` · bal ${health.sickw.balance}`
-                : ""}
-            </span>
-            <span
-              className={`rounded-full px-3 py-1 font-semibold ${statusBadgeClass(
-                health?.sheets.status ?? "degraded",
-              )}`}
-            >
-              Sheets {health?.sheets.status ?? "checking"}
-            </span>
-            <span
-              className={`rounded-full px-3 py-1 font-semibold ${statusBadgeClass(
-                health?.db?.status ?? "degraded",
-              )}`}
-            >
-              DB {health?.db?.status ?? "checking"}
-            </span>
-            {healthLoading && (
-              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 font-semibold text-white/80">
-                Checking…
-              </span>
-            )}
-          </div>
-        </header>
-
-        <section className="rounded-3xl border border-white/10 bg-slate-900/50 p-5 shadow-2xl shadow-indigo-500/10 backdrop-blur md:p-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-200/80">
-            How a scan runs
+            Scan devices, run SickW instant checks, keep a local cache, and mirror into Google
+            Sheets—without exposing provider keys.
           </p>
-          <div className="mt-2 grid gap-3 text-sm text-slate-200 md:grid-cols-4">
-            <div className="flex items-start gap-2">
-              <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-xs font-bold text-white">
-                1
-              </span>
-              <div>
-                <p className="font-semibold text-white">Enqueue</p>
-                <p className="text-slate-300">Scan or paste; we queue instantly.</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-xs font-bold text-white">
-                2
-              </span>
-              <div>
-                <p className="font-semibold text-white">Cache check</p>
-                <p className="text-slate-300">Fast return if we already have it.</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-xs font-bold text-white">
-                3
-              </span>
-              <div>
-                <p className="font-semibold text-white">SickW lookup</p>
-                <p className="text-slate-300">Calls provider with your service choice.</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-xs font-bold text-white">
-                4
-              </span>
-              <div>
-                <p className="font-semibold text-white">Sheets mirror</p>
-                <p className="text-slate-300">Append to today’s tab with grade/cost.</p>
-              </div>
-            </div>
-          </div>
-        </section>
+        </div>
+      </header>
+      <div className="flex flex-col gap-8">
 
         <section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl shadow-fuchsia-500/10 backdrop-blur-md md:p-8">
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <div className="grid gap-4 md:grid-cols-[3fr_2fr]">
+            <div className="grid gap-4 md:grid-cols-[2fr_1fr]">
               <div>
                 <label
                   htmlFor="imei"
@@ -802,7 +684,7 @@ export default function Home() {
                   }
                   value={imei}
                   onChange={handleImeiChange}
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-lg tracking-wide text-white placeholder:text-white/40 shadow-inner shadow-black/20 focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40"
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-base tracking-wide text-white placeholder:text-white/40 shadow-inner shadow-black/20 focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40"
                 />
                 <div className="mt-2 flex flex-col gap-1 text-xs text-slate-400 md:flex-row md:items-center md:justify-between">
                   <p>
@@ -810,6 +692,18 @@ export default function Home() {
                       ? "Serial mode: no Luhn check. Enter 5-40 letters/numbers."
                       : "Scans auto-run when a valid IMEI is detected; invalid scans clear so you can rescan immediately."}
                   </p>
+              {seen && (
+                <span className="flex items-center gap-2 text-emerald-200">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide">
+                    Seen before · {seen.count}x
+                  </span>
+                  <span className="text-[11px] text-emerald-100/80">
+                    Last: {formatDate(seen.lastDate)}
+                    {seen.grade ? ` · Grade ${seen.grade}` : ""}
+                    {typeof seen.cost === "number" ? ` · $${seen.cost.toFixed(2)}` : ""}
+                  </span>
+                </span>
+              )}
                   <label className="flex items-center gap-2 text-slate-200">
                     <input
                       type="checkbox"
@@ -865,7 +759,7 @@ export default function Home() {
                   placeholder="e.g. $120 or 120.00"
                   value={singleCost}
                   onChange={(e) => setSingleCost(e.target.value)}
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/40 shadow-inner shadow-black/10 focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40"
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-white/40 shadow-inner shadow-black/10 focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40"
         />
               </div>
               <div>
@@ -943,179 +837,177 @@ export default function Home() {
         </section>
 
         <section className="rounded-3xl border border-white/10 bg-slate-900/50 p-6 shadow-2xl shadow-indigo-500/10 backdrop-blur md:p-8">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-200/80">
-                    Batch paste
-                  </p>
-                  <h2 className="text-2xl font-semibold text-white">
-                    Run up to 50 IMEIs in one go
-                  </h2>
-                  <p className="text-sm text-slate-300">
-                    We sanitize, dedupe, and Luhn-check before sending to SickW. Invalid
-                    IMEIs are reported inline.
-                  </p>
-                </div>
-                <div className="text-right text-xs text-slate-400">
-                  <div>{batchValidImeis.length} valid</div>
-                  <div>{batchInvalidImeis.length} invalid</div>
-                </div>
-              </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-200/80">
+                Batch paste
+              </p>
+              <h2 className="text-2xl font-semibold text-white">
+                Run up to 50 IMEIs in one go
+              </h2>
+              <p className="text-sm text-slate-300">
+                We sanitize, dedupe, and Luhn-check before sending to SickW. Invalid IMEIs are
+                reported inline.
+              </p>
+            </div>
+            <div className="text-right text-xs text-slate-400">
+              <div>{batchValidImeis.length} valid</div>
+              <div>{batchInvalidImeis.length} invalid</div>
+            </div>
+          </div>
 
-            <div className="mt-3 flex flex-wrap gap-3 text-sm text-slate-200">
-              <label className="flex items-center gap-2">
+          <div className="mt-3 flex flex-wrap gap-3 text-sm text-slate-200">
+            <label className="flex items-center gap-2">
+              <span className="text-xs uppercase tracking-wide text-slate-400">Grade</span>
+              <select
+                value={userGrade}
+                onChange={(e) => setUserGrade(e.target.value)}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white shadow-inner shadow-black/10 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+              >
+                <option value="">—</option>
+                <option value="NEW">NEW</option>
+                <option value="OB">OB</option>
+                <option value="HSO">HSO</option>
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-2">
+              <span className="text-xs uppercase tracking-wide text-slate-400">Cost</span>
+              <input
+                type="text"
+                value={batchCost}
+                onChange={(e) => setBatchCost(e.target.value)}
+                placeholder="$"
+                className="w-28 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white placeholder:text-white/40 shadow-inner shadow-black/10 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+              />
+            </label>
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-[2fr_1fr]">
+            <textarea
+              value={batchText}
+              onChange={(e) => setBatchText(e.target.value)}
+              rows={8}
+              placeholder="Paste IMEIs here, one per line or separated by commas/spaces..."
+              className="w-full rounded-2xl border border-white/10 bg-black/40 p-4 text-sm text-white shadow-inner shadow-black/30 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+            />
+            <div className="flex h-full flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200">
+              <div className="flex items-center justify-between">
                 <span className="text-xs uppercase tracking-wide text-slate-400">
-                  Grade
+                  Ready to submit
                 </span>
-                <select
-                  value={userGrade}
-                  onChange={(e) => setUserGrade(e.target.value)}
-                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white shadow-inner shadow-black/10 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                >
-                  <option value="">—</option>
-                  <option value="NEW">NEW</option>
-                  <option value="OB">OB</option>
-                  <option value="HSO">HSO</option>
-                  <option value="A">A</option>
-                  <option value="B">B</option>
-                  <option value="C">C</option>
-                </select>
-              </label>
-              <label className="flex items-center gap-2">
-                <span className="text-xs uppercase tracking-wide text-slate-400">
-                  Cost
+                <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold">
+                  {batchImeis.length} IMEIs
                 </span>
-                <input
-                  type="text"
-                  value={batchCost}
-                  onChange={(e) => setBatchCost(e.target.value)}
-                  placeholder="$"
-                  className="w-28 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white placeholder:text-white/40 shadow-inner shadow-black/10 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                />
-              </label>
               </div>
-
-              <div className="mt-4 grid gap-4 md:grid-cols-[2fr_1fr]">
-                <textarea
-                  value={batchText}
-                  onChange={(e) => setBatchText(e.target.value)}
-                  rows={8}
-                  placeholder="Paste IMEIs here, one per line or separated by commas/spaces..."
-                  className="w-full rounded-2xl border border-white/10 bg-black/40 p-4 text-sm text-white shadow-inner shadow-black/30 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
-                />
-                <div className="flex h-full flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs uppercase tracking-wide text-slate-400">
-                      Ready to submit
-                    </span>
-                    <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold">
-                      {batchImeis.length} IMEIs
-                    </span>
-                  </div>
-                  {batchInvalidImeis.length > 0 && (
-                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-amber-100">
-                      <p className="text-xs font-semibold uppercase tracking-wide">
-                        Invalid (Luhn failed)
-                      </p>
-                      <p className="mt-1 break-words text-xs">
-                        {batchInvalidImeis.slice(0, 5).join(", ")}
-                        {batchInvalidImeis.length > 5 ? " …" : ""}
-                      </p>
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    disabled={batchPending || batchImeis.length === 0 || batchImeis.length > 50}
-                    onClick={runBatch}
-                    className="w-full rounded-xl bg-gradient-to-r from-indigo-500 via-blue-500 to-cyan-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {batchPending
-                      ? "Running batch..."
-                      : `Run batch (${Math.min(batchImeis.length, 50)} IMEIs)`}
-                  </button>
-                  <p className="text-xs text-slate-400">
-                    We process sequentially with a small delay to avoid rate limits. Cache hits
-                    still append to Sheets.
+              {batchInvalidImeis.length > 0 && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-amber-100">
+                  <p className="text-xs font-semibold uppercase tracking-wide">
+                    Invalid (Luhn failed)
                   </p>
-                  {batchError && (
-                    <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-100">
-                      {batchError}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {batchResults.length > 0 && (
-                <div className="mt-6 overflow-x-auto">
-                  <table className="min-w-full text-left text-sm text-white/90">
-                    <thead>
-                      <tr className="text-xs uppercase tracking-wide text-slate-400">
-                        <th className="py-2 pr-4">IMEI</th>
-                        <th className="py-2 pr-4">Result</th>
-                        <th className="py-2 pr-4">Service</th>
-                        <th className="py-2 pr-4">Model</th>
-                        <th className="py-2 pr-4">Carrier</th>
-                        <th className="py-2 pr-4">Blacklist</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {batchResults.map((entry, idx) => {
-                        if (entry.ok) {
-                          return (
-                            <tr
-                              key={`${entry.imei}-${idx}`}
-                              className="border-t border-white/5 text-slate-200"
-                            >
-                              <td className="py-2 pr-4 font-mono text-xs text-white">
-                                {entry.imei}
-                              </td>
-                              <td className="py-2 pr-4">
-                                <span
-                                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                                    entry.source === "cache"
-                                      ? "bg-emerald-400/10 text-emerald-200"
-                                      : "bg-blue-400/10 text-blue-200"
-                                  }`}
-                                >
-                                  {entry.source === "cache" ? "cache" : "live"}
-                                </span>
-                              </td>
-                              <td className="py-2 pr-4">
-                                {entry.data.serviceName ?? `#${entry.data.serviceId}`}
-                              </td>
-                              <td className="py-2 pr-4">
-                                {entry.data.modelName ?? entry.data.description ?? "—"}
-                              </td>
-                              <td className="py-2 pr-4">{entry.data.carrier ?? "—"}</td>
-                              <td className="py-2 pr-4">
-                                {entry.data.blacklistStatus ?? "Unknown"}
-                              </td>
-                            </tr>
-                          );
-                        }
-
-                        return (
-                          <tr
-                            key={`${entry.imei}-${idx}`}
-                            className="border-t border-white/5 text-slate-200"
-                          >
-                            <td className="py-2 pr-4 font-mono text-xs text-white">
-                              {entry.imei}
-                            </td>
-                            <td className="py-2 pr-4" colSpan={5}>
-                              <span className="rounded-full bg-red-500/20 px-3 py-1 text-xs font-semibold text-red-200">
-                                {entry.error}
-                                {entry.code ? ` (${entry.code})` : ""}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                  <p className="mt-1 break-words text-xs">
+                    {batchInvalidImeis.slice(0, 5).join(", ")}
+                    {batchInvalidImeis.length > 5 ? " …" : ""}
+                  </p>
                 </div>
               )}
-            </section>
+              <button
+                type="button"
+                disabled={
+                  batchPending || batchImeis.length === 0 || batchImeis.length > 50
+                }
+                onClick={runBatch}
+                className="w-full rounded-xl bg-gradient-to-r from-indigo-500 via-blue-500 to-cyan-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {batchPending
+                  ? "Running batch..."
+                  : `Run batch (${Math.min(batchImeis.length, 50)} IMEIs)`}
+              </button>
+              <p className="text-xs text-slate-400">
+                We process sequentially with a small delay to avoid rate limits. Cache hits
+                still append to Sheets.
+              </p>
+              {batchError && (
+                <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-100">
+                  {batchError}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {batchResults.length > 0 && (
+            <div className="mt-6 overflow-x-auto">
+              <table className="min-w-full text-left text-sm text-white/90">
+                <thead>
+                  <tr className="text-xs uppercase tracking-wide text-slate-400">
+                    <th className="py-2 pr-4">IMEI</th>
+                    <th className="py-2 pr-4">Result</th>
+                    <th className="py-2 pr-4">Service</th>
+                    <th className="py-2 pr-4">Model</th>
+                    <th className="py-2 pr-4">Carrier</th>
+                    <th className="py-2 pr-4">Blacklist</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {batchResults.map((entry, idx) => {
+                    if (entry.ok) {
+                      return (
+                        <tr
+                          key={`${entry.imei}-${idx}`}
+                          className="border-t border-white/5 text-slate-200"
+                        >
+                          <td className="py-2 pr-4 font-mono text-xs text-white">
+                            {entry.imei}
+                          </td>
+                          <td className="py-2 pr-4">
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                entry.source === "cache"
+                                  ? "bg-emerald-400/10 text-emerald-200"
+                                  : "bg-blue-400/10 text-blue-200"
+                              }`}
+                            >
+                              {entry.source === "cache" ? "cache" : "live"}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-4">
+                            {entry.data.serviceName ?? `#${entry.data.serviceId}`}
+                          </td>
+                          <td className="py-2 pr-4">
+                            {entry.data.modelName ?? entry.data.description ?? "—"}
+                          </td>
+                          <td className="py-2 pr-4">{entry.data.carrier ?? "—"}</td>
+                          <td className="py-2 pr-4">
+                            {entry.data.blacklistStatus ?? "Unknown"}
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return (
+                      <tr
+                        key={`${entry.imei}-${idx}`}
+                        className="border-t border-white/5 text-slate-200"
+                      >
+                        <td className="py-2 pr-4 font-mono text-xs text-white">
+                          {entry.imei}
+                        </td>
+                        <td className="py-2 pr-4" colSpan={5}>
+                          <span className="rounded-full bg-red-500/20 px-3 py-1 text-xs font-semibold text-red-200">
+                            {entry.error}
+                            {entry.code ? ` (${entry.code})` : ""}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
 
         {queue.length > 0 && (
           <section className="rounded-3xl border border-white/10 bg-slate-900/50 p-6 shadow-2xl shadow-indigo-500/10 backdrop-blur md:p-8">
@@ -1389,10 +1281,10 @@ export default function Home() {
                   ))}
                 </tbody>
               </table>
-        </div>
+            </div>
           )}
         </section>
-      </main>
+      </div>
       {toast && (
         <div className="fixed bottom-4 right-4 z-50">
           <div

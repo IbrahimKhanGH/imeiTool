@@ -392,8 +392,9 @@ export const rehydrateNormalized = (
 
 const performRequest = async <T = unknown>(
   params: SickWRequestParams,
+  opts?: { apiKey?: string },
 ): Promise<T> => {
-  const apiKey = ensureEnv(env.sickwApiKey, "SICKW_API_KEY");
+  const apiKey = opts?.apiKey ?? ensureEnv(env.sickwApiKey, "SICKW_API_KEY");
   const url = new URL(env.sickwBaseUrl);
 
   Object.entries({ key: apiKey, ...params }).forEach(([key, value]) => {
@@ -420,6 +421,7 @@ const performRequest = async <T = unknown>(
 
 export const querySickW = async (
   params: SickWQueryParams,
+  opts?: { apiKey?: string },
 ): Promise<NormalizedDeviceInfo> => {
   const fallbackServiceId =
     (params.serviceId ?? env.sickwDefaultServiceId)?.trim() ?? "";
@@ -432,11 +434,14 @@ export const querySickW = async (
   }
 
   const format: SickWFormat = params.format ?? "beta";
-  const raw = await performRequest<SickWRawResponse>({
-    format,
-    imei: params.imei,
-    service: fallbackServiceId,
-  });
+  const raw = await performRequest<SickWRawResponse>(
+    {
+      format,
+      imei: params.imei,
+      service: fallbackServiceId,
+    },
+    { apiKey: opts?.apiKey },
+  );
 
   const error = extractError(raw);
   if (error) {
@@ -457,8 +462,13 @@ export const querySickW = async (
   return normalizePayload(raw, fallbackServiceId);
 };
 
-export const fetchSickWBalance = async (): Promise<{ balance: number | null }> => {
-  const raw = await performRequest<{ balance?: string }>({ action: "balance" });
+export const fetchSickWBalance = async (opts?: {
+  apiKey?: string;
+}): Promise<{ balance: number | null }> => {
+  const raw = await performRequest<{ balance?: string }>(
+    { action: "balance" },
+    { apiKey: opts?.apiKey },
+  );
   return { balance: parseNumber(raw.balance) };
 };
 

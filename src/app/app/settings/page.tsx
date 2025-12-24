@@ -18,21 +18,80 @@ export default function SettingsPage() {
   const isAdmin = role === "admin";
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [credsReady, setCredsReady] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
+  const [sickwKey, setSickwKey] = useState("");
+  const [googleSheetsId, setGoogleSheetsId] = useState("");
+  const [googleServiceAccountEmail, setGoogleServiceAccountEmail] = useState("");
+  const [googleServiceAccountPrivateKey, setGoogleServiceAccountPrivateKey] = useState("");
+  const [defaultTab, setDefaultTab] = useState("");
+  const [timezone, setTimezone] = useState("America/Chicago");
+  const [syncToSheets, setSyncToSheets] = useState(true);
 
   useEffect(() => {
     const run = async () => {
       setLoading(true);
+      setCredsReady(false);
       try {
         const res = await fetch("/api/health", { cache: "no-store" });
         if (res.ok) {
           setHealth((await res.json()) as HealthResponse);
+        }
+        if (isAdmin) {
+          const credRes = await fetch("/api/credentials", { cache: "no-store" });
+          if (credRes.ok) {
+            const data = await credRes.json();
+            setSickwKey(data.sickwKey ?? "");
+            setGoogleSheetsId(data.googleSheetsId ?? "");
+            setGoogleServiceAccountEmail(data.googleServiceAccountEmail ?? "");
+            setGoogleServiceAccountPrivateKey(data.googleServiceAccountPrivateKey ?? "");
+            setDefaultTab(data.defaultTab ?? "");
+            setTimezone(data.timezone ?? "America/Chicago");
+            setSyncToSheets(data.syncToSheets ?? true);
+            setCredsReady(true);
+          }
+        } else {
+          setCredsReady(true);
         }
       } finally {
         setLoading(false);
       }
     };
     run();
-  }, []);
+  }, [isAdmin]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setSaveMessage(null);
+    try {
+      const res = await fetch("/api/credentials", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sickwKey,
+          googleSheetsId,
+          googleServiceAccountEmail,
+          googleServiceAccountPrivateKey,
+          defaultTab,
+          timezone,
+          syncToSheets,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to save");
+      }
+      setSaveMessage("Saved");
+    } catch (err) {
+      setSaveMessage(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+      setTimeout(() => setSaveMessage(null), 2000);
+    }
+  };
 
   const statusPill = (label: string, status?: HealthStatus, detail?: string) => {
     const cls =
@@ -100,7 +159,7 @@ export default function SettingsPage() {
               <div className="rounded-2xl border border-white/10 bg-black/30 p-4 shadow-inner shadow-black/20">
                 <dt className="text-xs uppercase tracking-wide text-slate-400">Default service</dt>
                 <dd className="mt-1 text-base font-semibold text-white">
-                  {health?.env.defaultServiceId ?? "Not set"}
+                  {loading ? "…" : health?.env.defaultServiceId ?? "Not set"}
                 </dd>
                 <p className="mt-1 text-xs text-slate-400">
                   Uses SICKW_DEFAULT_SERVICE_ID when a service isn&apos;t chosen by the user.
@@ -109,14 +168,14 @@ export default function SettingsPage() {
               <div className="rounded-2xl border border-white/10 bg-black/30 p-4 shadow-inner shadow-black/20">
                 <dt className="text-xs uppercase tracking-wide text-slate-400">Timezone</dt>
                 <dd className="mt-1 text-base font-semibold text-white">
-                  {health?.env.timezone ?? "America/Chicago"}
+                  {loading ? "…" : health?.env.timezone ?? "America/Chicago"}
                 </dd>
                 <p className="mt-1 text-xs text-slate-400">Applied to Sheets tab naming and timestamps.</p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-black/30 p-4 shadow-inner shadow-black/20">
                 <dt className="text-xs uppercase tracking-wide text-slate-400">SickW configured</dt>
                 <dd className="mt-1 text-base font-semibold text-white">
-                  {health?.env.sickwConfigured ? "Yes" : "No"}
+                  {loading ? "…" : health?.env.sickwConfigured ? "Yes" : "No"}
                 </dd>
                 <p className="mt-1 text-xs text-slate-400">
                   Update SICKW_API_KEY (and default service) in the environment or tenant config.
@@ -125,21 +184,117 @@ export default function SettingsPage() {
               <div className="rounded-2xl border border-white/10 bg-black/30 p-4 shadow-inner shadow-black/20">
                 <dt className="text-xs uppercase tracking-wide text-slate-400">Sheets configured</dt>
                 <dd className="mt-1 text-base font-semibold text-white">
-                  {health?.env.sheetsConfigured ? "Yes" : "No"}
+                  {loading ? "…" : health?.env.sheetsConfigured ? "Yes" : "No"}
                 </dd>
                 <p className="mt-1 text-xs text-slate-400">
                   Requires GOOGLE_SHEETS_ID and service account email/key with edit access.
                 </p>
               </div>
             </dl>
-            <p className="mt-4 text-xs text-slate-400">
-              To update credentials, deploy with new env values (or future tenant-level settings once added).
-            </p>
+            <form onSubmit={handleSave} className="mt-6 grid gap-4">
+              {!credsReady ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="h-48 rounded-2xl border border-white/10 bg-white/5 animate-pulse" />
+                  <div className="h-72 rounded-2xl border border-white/10 bg-white/5 animate-pulse" />
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-2xl border border-white/10 bg-black/30 p-4 shadow-inner shadow-black/20">
+                    <h3 className="text-lg font-semibold text-white">SickW</h3>
+                    <label className="mt-3 block text-xs uppercase tracking-wide text-slate-400">
+                      API Key
+                    </label>
+                    <input
+                      type="password"
+                      value={sickwKey}
+                      onChange={(e) => setSickwKey(e.target.value)}
+                      placeholder="SICKW_API_KEY"
+                      className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                    />
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-black/30 p-4 shadow-inner shadow-black/20">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-white">Google Sheets</h3>
+                      <label className="flex items-center gap-2 text-xs text-slate-200">
+                        <input
+                          type="checkbox"
+                          checked={syncToSheets}
+                          onChange={(e) => setSyncToSheets(e.target.checked)}
+                          className="h-4 w-4 rounded border-white/30 bg-white/10 text-indigo-500 focus:ring-indigo-500/60"
+                        />
+                        Sync to Sheets
+                      </label>
+                    </div>
+                    <label className="mt-3 block text-xs uppercase tracking-wide text-slate-400">
+                      Sheet ID
+                    </label>
+                    <input
+                      value={googleSheetsId}
+                      onChange={(e) => setGoogleSheetsId(e.target.value)}
+                      placeholder="Spreadsheet ID"
+                      className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                    />
+                    <label className="mt-3 block text-xs uppercase tracking-wide text-slate-400">
+                      Service Account Email
+                    </label>
+                    <input
+                      value={googleServiceAccountEmail}
+                      onChange={(e) => setGoogleServiceAccountEmail(e.target.value)}
+                      placeholder="service-account@project.iam.gserviceaccount.com"
+                      className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                    />
+                    <label className="mt-3 block text-xs uppercase tracking-wide text-slate-400">
+                      Service Account Private Key
+                    </label>
+                    <textarea
+                      value={googleServiceAccountPrivateKey}
+                      onChange={(e) => setGoogleServiceAccountPrivateKey(e.target.value)}
+                      placeholder="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+                      rows={3}
+                      className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                    />
+                    <label className="mt-3 block text-xs uppercase tracking-wide text-slate-400">
+                      Default tab (optional)
+                    </label>
+                    <input
+                      value={defaultTab}
+                      onChange={(e) => setDefaultTab(e.target.value)}
+                      placeholder="e.g. DECEMBER 23"
+                      className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                    />
+                    <label className="mt-3 block text-xs uppercase tracking-wide text-slate-400">
+                      Timezone
+                    </label>
+                    <input
+                      value={timezone}
+                      onChange={(e) => setTimezone(e.target.value)}
+                      placeholder="America/Chicago"
+                      className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="rounded-xl bg-gradient-to-r from-indigo-500 via-blue-500 to-cyan-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:brightness-110 disabled:opacity-60"
+                >
+                  {saving ? "Saving..." : "Save settings"}
+                </button>
+                {saveMessage && (
+                  <span className="text-xs text-slate-200">{saveMessage}</span>
+                )}
+              </div>
+            </form>
           </section>
         )}
       </main>
     </div>
   );
 }
+
 
 
