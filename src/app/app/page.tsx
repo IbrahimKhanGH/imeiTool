@@ -57,7 +57,6 @@ const curatedServiceOptions: ServiceOption[] = Object.values(SICKW_SERVICES).map
 
 const DEFAULT_SERVICE_ID =
   SICKW_SERVICES.iphoneCarrierFmiBlacklist?.id ??
-  SICKW_SERVICES.iphoneCarrierFmi?.id ??
   curatedServiceOptions[0]?.id ??
   "";
 
@@ -259,8 +258,9 @@ export default function Home() {
         const list = payload["Service List"];
         if (!Array.isArray(list)) return;
 
+        const allowedIds = new Set(["61", "82"]);
         const dynamicOptions: ServiceOption[] = list
-          .filter((item) => item.service && item.name)
+          .filter((item) => item.service && item.name && allowedIds.has(item.service))
           .map((item) => ({
             id: item.service,
             name: decodeHtml(item.name),
@@ -268,26 +268,13 @@ export default function Home() {
             source: "api",
           }));
 
-        setServiceOptions((current) => {
+        // Merge curated with any dynamic overrides for the allowed ids
+        setServiceOptions(() => {
           const byId = new Map<string, ServiceOption>();
-          [...curatedServiceOptions, ...current, ...dynamicOptions].forEach(
-            (option) => {
-              if (!byId.has(option.id)) {
-                byId.set(option.id, option);
-              }
-            },
-          );
-
-          return Array.from(byId.values()).sort((a, b) => {
-            const priceA = Number(a.price ?? Number.MAX_VALUE);
-            const priceB = Number(b.price ?? Number.MAX_VALUE);
-            if (Number.isFinite(priceA) && Number.isFinite(priceB)) {
-              if (priceA !== priceB) {
-                return priceA - priceB;
-              }
-            }
-            return a.name.localeCompare(b.name);
+          [...curatedServiceOptions, ...dynamicOptions].forEach((option) => {
+            byId.set(option.id, option);
           });
+          return Array.from(byId.values());
         });
       } catch (serviceError) {
         console.warn("Failed to load SickW service list", serviceError);
