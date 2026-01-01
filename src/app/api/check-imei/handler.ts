@@ -171,12 +171,14 @@ export const processLookup = async (
     const baseSheetsId = decryptField(credential?.googleSheetsIdEnc) ?? undefined;
     const monthlySheetId = decryptField(credential?.currentSheetIdEnc) ?? undefined;
 
-    const autoShareEmails =
-      credential?.monthlyShareEmailsEnc &&
-      decryptField(credential.monthlyShareEmailsEnc)
-        ?.split(",")
-        .map((e) => e.trim())
-        .filter(Boolean);
+    const autoShareEmails: string[] | null = credential?.monthlyShareEmailsEnc
+      ? (
+          decryptField(credential.monthlyShareEmailsEnc)
+            ?.split(",")
+            .map((e) => e.trim())
+            .filter(Boolean) ?? []
+        )
+      : null;
 
     await appendToSheet(fresh, {
       syncToSheets: credential?.syncToSheets ?? true,
@@ -191,7 +193,7 @@ export const processLookup = async (
       monthlySheetPrefix: credential?.monthlySheetPrefix ?? undefined,
       currentSheetMonth: credential?.currentSheetMonth ?? undefined,
       currentSheetId: monthlySheetId ?? baseSheetsId,
-      autoShareEmails: autoShareEmails?.length ? autoShareEmails : undefined,
+      autoShareEmails: autoShareEmails?.length ? autoShareEmails : null,
       onMonthlySheetChange: async ({ monthKey, sheetId }) => {
         try {
           await prisma.credential.update({
