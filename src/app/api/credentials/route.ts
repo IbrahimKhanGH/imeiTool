@@ -37,6 +37,15 @@ export async function GET() {
     defaultTab: cred?.defaultTab ?? "",
     timezone: cred?.timezone ?? "America/Chicago",
     syncToSheets: cred?.syncToSheets ?? true,
+    autoMonthlySheets: cred?.autoMonthlySheets ?? false,
+    monthlySheetPrefix: cred?.monthlySheetPrefix ?? "",
+    currentSheetMonth: cred?.currentSheetMonth ?? null,
+    autoShareEmails:
+      cred?.monthlyShareEmailsEnc &&
+      decryptField(cred.monthlyShareEmailsEnc)
+        ?.split(",")
+        .map((e) => e.trim())
+        .filter(Boolean),
   });
 }
 
@@ -55,6 +64,9 @@ export async function PUT(req: Request) {
     defaultTab?: string;
     timezone?: string;
     syncToSheets?: boolean;
+    autoMonthlySheets?: boolean;
+    monthlySheetPrefix?: string;
+    autoShareEmails?: string[];
   };
 
   try {
@@ -75,6 +87,14 @@ export async function PUT(req: Request) {
     defaultTab: body.defaultTab?.trim() || null,
     timezone: body.timezone?.trim() || "America/Chicago",
     syncToSheets: body.syncToSheets ?? true,
+    autoMonthlySheets: body.autoMonthlySheets ?? false,
+    monthlySheetPrefix: body.monthlySheetPrefix?.trim() || null,
+    monthlyShareEmailsEnc: encryptField(
+      (body.autoShareEmails ?? [])
+        .map((e) => e.trim())
+        .filter(Boolean)
+        .join(",") || null,
+    ),
   };
 
   const updated = await prisma.credential.upsert({
@@ -92,6 +112,15 @@ export async function PUT(req: Request) {
     defaultTab: updated.defaultTab ?? "",
     timezone: updated.timezone ?? "America/Chicago",
     syncToSheets: updated.syncToSheets,
+    autoMonthlySheets: updated.autoMonthlySheets,
+    monthlySheetPrefix: updated.monthlySheetPrefix ?? "",
+    currentSheetMonth: updated.currentSheetMonth ?? null,
+    autoShareEmails:
+      updated.monthlyShareEmailsEnc &&
+      decryptField(updated.monthlyShareEmailsEnc)
+        ?.split(",")
+        .map((e) => e.trim())
+        .filter(Boolean),
   });
 }
 

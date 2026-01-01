@@ -9,6 +9,16 @@ export type SheetsConfig = {
   serviceAccountPrivateKey?: string;
   tab?: string;
   timezone?: string;
+  autoMonthlySheets?: boolean;
+  monthlySheetPrefix?: string;
+  currentSheetMonth?: string | null;
+  currentSheetId?: string | null;
+  autoShareEmails?: string[] | null;
+  onMonthlySheetChange?: (args: {
+    monthKey: string;
+    sheetId: string;
+    spreadsheetTitle: string;
+  }) => Promise<void> | void;
 };
 
 const getSheetsClient = async (
@@ -27,10 +37,33 @@ const getSheetsClient = async (
   const auth = new google.auth.JWT({
     email,
     key: privateKey.replace(/\\n/g, "\n"),
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    scopes: [
+      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/drive",
+    ],
   });
 
   return google.sheets({ version: "v4", auth });
+};
+
+const getDriveClient = async (config?: SheetsConfig) => {
+  const email =
+    config?.serviceAccountEmail ??
+    ensureEnv(env.googleServiceAccountEmail, "GOOGLE_SERVICE_ACCOUNT_EMAIL");
+  const privateKey =
+    config?.serviceAccountPrivateKey ??
+    ensureEnv(
+      env.googleServiceAccountPrivateKey,
+      "GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY",
+    );
+
+  const auth = new google.auth.JWT({
+    email,
+    key: privateKey.replace(/\\n/g, "\n"),
+    scopes: ["https://www.googleapis.com/auth/drive"],
+  });
+
+  return google.drive({ version: "v3", auth });
 };
 
 const formatDateForSheet = (iso: string, timezone?: string): string => {
@@ -61,6 +94,62 @@ const formatDailySheetTitle = (iso: string, timezone?: string): string => {
     day: "numeric",
   });
   return title.toUpperCase();
+};
+
+const formatMonthKey = (iso: string, timezone?: string): string => {
+  const date = new Date(iso);
+  const year = date.toLocaleString("en-US", {
+    timeZone: timezone ?? "America/Chicago",
+    year: "numeric",
+  });
+  const month = date.toLocaleString("en-US", {
+    timeZone: timezone ?? "America/Chicago",
+    month: "2-digit",
+  });
+  return `${year}-${month}`;
+};
+
+const createSpreadsheet = async (
+  sheets: sheets_v4.Sheets,
+  title: string,
+): Promise<string> => {
+  const res = await sheets.spreadsheets.create({
+    requestBody: {
+      properties: { title },
+    },
+    fields: "spreadsheetId",
+  });
+  const spreadsheetId = res.data.spreadsheetId;
+  if (!spreadsheetId) {
+    throw new Error("Failed to create spreadsheet");
+  }
+  return spreadsheetId;
+};
+
+const shareSpreadsheetIfNeeded = async (
+  spreadsheetId: string,
+  emails?: string[] | null,
+  config?: SheetsConfig,
+) => {
+  if (!emails || emails.length === 0) return;
+  const drive = await getDriveClient(config);
+  for (const email of emails) {
+    const trimmed = email.trim();
+    if (!trimmed) continue;
+    try {
+      await drive.permissions.create({
+        fileId: spreadsheetId,
+        sendNotificationEmail: false,
+        requestBody: {
+          type: "user",
+          role: "writer",
+          emailAddress: trimmed,
+        },
+      });
+    } catch (err) {
+      console.error("Failed to share spreadsheet with", trimmed, err);
+    }
+  }
 };
 
 const ensureSheetExists = async (
@@ -107,7 +196,6 @@ export const appendToSheet = async (
   config?: SheetsConfig,
 ): Promise<void> => {
   const shouldSync = config?.syncToSheets ?? true;
-  const sheetsId = config?.sheetsId ?? env.googleSheetsId;
   const saEmail = config?.serviceAccountEmail ?? env.googleServiceAccountEmail;
   const saKey =
     config?.serviceAccountPrivateKey ?? env.googleServiceAccountPrivateKey;
@@ -115,14 +203,58 @@ export const appendToSheet = async (
   if (
     !shouldSync ||
     info.status !== "success" ||
-    !(sheetsId && saEmail && saKey)
+    !(saEmail && saKey)
   ) {
     return;
   }
 
   try {
-    const sheets = await getSheetsClient(config);
-    const spreadsheetId = sheetsId;
+    let sheets: sheets_v4.Sheets | null = null;
+    const getClient = async () => {
+      if (!sheets) {
+        sheets = await getSheetsClient(config);
+      }
+      return sheets;
+    };
+
+    const monthKey = config?.autoMonthlySheets
+      ? formatMonthKey(info.checkedAt, config?.timezone)
+      : undefined;
+
+    let spreadsheetId =
+      config?.sheetsId ?? env.googleSheetsId ?? config?.currentSheetId ?? undefined;
+
+    if (config?.autoMonthlySheets) {
+      const hasCurrent =
+        config.currentSheetMonth === monthKey && config.currentSheetId;
+      if (hasCurrent) {
+        spreadsheetId = config.currentSheetId ?? spreadsheetId;
+      } else {
+        const client = await getClient();
+        const spreadsheetTitle = `${
+          config?.monthlySheetPrefix?.trim() || "Lookups"
+        } - ${monthKey}`;
+        spreadsheetId = await createSpreadsheet(client, spreadsheetTitle);
+        await shareSpreadsheetIfNeeded(
+          spreadsheetId,
+          config?.autoShareEmails,
+          config,
+        );
+        if (config?.onMonthlySheetChange) {
+          await config.onMonthlySheetChange({
+            monthKey: monthKey ?? "",
+            sheetId: spreadsheetId,
+            spreadsheetTitle,
+          });
+        }
+      }
+    }
+
+    if (!spreadsheetId) {
+      return;
+    }
+
+    const sheetsClient = await getClient();
     const lockStatus = simplifyLockStatus(info.simLock);
     const costDisplay =
       typeof info.userCost === "number" && Number.isFinite(info.userCost)
@@ -144,9 +276,9 @@ export const appendToSheet = async (
       "Date",
     ];
 
-    await ensureSheetExists(sheets, spreadsheetId, sheetTitle, headers);
+    await ensureSheetExists(sheetsClient, spreadsheetId, sheetTitle, headers);
 
-    await sheets.spreadsheets.values.append({
+    await sheetsClient.spreadsheets.values.append({
       spreadsheetId,
       range: `'${sheetTitle}'!A1`,
       valueInputOption: "USER_ENTERED",

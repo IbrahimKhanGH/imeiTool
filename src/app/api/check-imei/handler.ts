@@ -10,7 +10,7 @@ import type {
 } from "@/types/imei";
 import type { Prisma } from "@prisma/client";
 import { env } from "@/lib/env";
-import { decryptField } from "@/lib/crypto";
+import { decryptField, encryptField } from "@/lib/crypto";
 
 export type RequestBody = {
   imei?: string;
@@ -167,15 +167,42 @@ export const processLookup = async (
     });
     logStep("db-write");
 
+    const timezone = credential?.timezone ?? "America/Chicago";
+    const baseSheetsId = decryptField(credential?.googleSheetsIdEnc) ?? undefined;
+    const monthlySheetId = decryptField(credential?.currentSheetIdEnc) ?? undefined;
+
     await appendToSheet(fresh, {
       syncToSheets: credential?.syncToSheets ?? true,
-      sheetsId: decryptField(credential?.googleSheetsIdEnc) ?? undefined,
+      sheetsId: baseSheetsId,
       serviceAccountEmail:
         decryptField(credential?.googleServiceAccountEmailEnc) ?? undefined,
       serviceAccountPrivateKey:
         decryptField(credential?.googleServiceAccountPrivateKeyEnc) ?? undefined,
       tab: credential?.defaultTab ?? undefined,
-      timezone: credential?.timezone ?? "America/Chicago",
+      timezone,
+      autoMonthlySheets: credential?.autoMonthlySheets ?? false,
+      monthlySheetPrefix: credential?.monthlySheetPrefix ?? undefined,
+      currentSheetMonth: credential?.currentSheetMonth ?? undefined,
+      currentSheetId: monthlySheetId ?? baseSheetsId,
+      autoShareEmails:
+        credential?.monthlyShareEmailsEnc &&
+        decryptField(credential.monthlyShareEmailsEnc)
+          ?.split(",")
+          .map((e) => e.trim())
+          .filter(Boolean),
+      onMonthlySheetChange: async ({ monthKey, sheetId }) => {
+        try {
+          await prisma.credential.update({
+            where: { tenantId: context.tenantId },
+            data: {
+              currentSheetMonth: monthKey,
+              currentSheetIdEnc: encryptField(sheetId),
+            },
+          });
+        } catch (err) {
+          console.error("Failed to persist monthly sheet id", err);
+        }
+      },
     });
     logStep("sheets-append");
 

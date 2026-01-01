@@ -29,6 +29,10 @@ export default function SettingsPage() {
   const [defaultTab, setDefaultTab] = useState("");
   const [timezone, setTimezone] = useState("America/Chicago");
   const [syncToSheets, setSyncToSheets] = useState(true);
+  const [autoMonthlySheets, setAutoMonthlySheets] = useState(false);
+  const [monthlySheetPrefix, setMonthlySheetPrefix] = useState("");
+  const [currentSheetMonth, setCurrentSheetMonth] = useState<string | null>(null);
+  const [autoShareEmails, setAutoShareEmails] = useState("");
 
   useEffect(() => {
     const run = async () => {
@@ -50,6 +54,14 @@ export default function SettingsPage() {
             setDefaultTab(data.defaultTab ?? "");
             setTimezone(data.timezone ?? "America/Chicago");
             setSyncToSheets(data.syncToSheets ?? true);
+            setAutoMonthlySheets(data.autoMonthlySheets ?? false);
+            setMonthlySheetPrefix(data.monthlySheetPrefix ?? "");
+            setCurrentSheetMonth(data.currentSheetMonth ?? null);
+            setAutoShareEmails(
+              Array.isArray(data.autoShareEmails)
+                ? data.autoShareEmails.join(", ")
+                : "",
+            );
             setCredsReady(true);
           }
         } else {
@@ -78,6 +90,12 @@ export default function SettingsPage() {
           defaultTab,
           timezone,
           syncToSheets,
+          autoMonthlySheets,
+          monthlySheetPrefix,
+          autoShareEmails: autoShareEmails
+            .split(",")
+            .map((e) => e.trim())
+            .filter(Boolean),
         }),
       });
       if (!res.ok) {
@@ -226,6 +244,40 @@ export default function SettingsPage() {
                         Sync to Sheets
                       </label>
                     </div>
+                    <div className="mt-3 flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={autoMonthlySheets}
+                          onChange={(e) => setAutoMonthlySheets(e.target.checked)}
+                          className="h-4 w-4 rounded border-white/30 bg-white/10 text-indigo-500 focus:ring-indigo-500/60"
+                        />
+                        <span className="uppercase tracking-wide">Auto-create monthly sheets</span>
+                      </label>
+                      <span className="text-[11px] text-slate-400">
+                        {currentSheetMonth ? `Current: ${currentSheetMonth}` : "No monthly sheet yet"}
+                      </span>
+                    </div>
+                    <label className="mt-3 block text-xs uppercase tracking-wide text-slate-400">
+                      Monthly sheet prefix
+                    </label>
+                    <input
+                      value={monthlySheetPrefix}
+                      onChange={(e) => setMonthlySheetPrefix(e.target.value)}
+                      placeholder="e.g. ClientA Lookups"
+                      className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                      disabled={!autoMonthlySheets}
+                    />
+                    <label className="mt-3 block text-xs uppercase tracking-wide text-slate-400">
+                      Auto-share emails (comma separated)
+                    </label>
+                    <input
+                      value={autoShareEmails}
+                      onChange={(e) => setAutoShareEmails(e.target.value)}
+                      placeholder="ops@example.com, qc@example.com"
+                      className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                      disabled={!autoMonthlySheets}
+                    />
                     <label className="mt-3 block text-xs uppercase tracking-wide text-slate-400">
                       Sheet ID
                     </label>

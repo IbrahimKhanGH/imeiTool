@@ -48,7 +48,8 @@ export default function HistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [cursor, setCursor] = useState<number | null>(null);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
-  const [prevStack, setPrevStack] = useState<number[]>([]);
+  const [prevCursor, setPrevCursor] = useState<number | null>(null);
+  const [direction, setDirection] = useState<"next" | "prev">("next");
 
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
@@ -78,7 +79,10 @@ export default function HistoryPage() {
         if (serialOnly) params.set("serialOnly", "true");
         if (startDate) params.set("startDate", startDate);
         if (endDate) params.set("endDate", endDate);
-        if (cursor) params.set("cursor", String(cursor));
+        if (cursor) {
+          params.set("cursor", String(cursor));
+          params.set("direction", direction);
+        }
 
         const res = await fetch(`/api/history?${params.toString()}`, {
           cache: "no-store",
@@ -90,6 +94,7 @@ export default function HistoryPage() {
         const data = (await res.json()) as HistoryResponse;
         setRecords(data.data);
         setNextCursor(data.nextCursor);
+        setPrevCursor(data.prevCursor);
       } catch (err) {
         if (!(err instanceof DOMException && err.name === "AbortError")) {
           setError(err instanceof Error ? err.message : "Failed to load history");
@@ -101,25 +106,36 @@ export default function HistoryPage() {
 
     fetchData();
     return () => controller.abort();
-  }, [cursor, pageSize, search, status, grade, carrier, model, serialOnly, startDate, endDate]);
+  }, [
+    cursor,
+    direction,
+    pageSize,
+    search,
+    status,
+    grade,
+    carrier,
+    model,
+    serialOnly,
+    startDate,
+    endDate,
+  ]);
 
   const resetCursor = () => {
     setCursor(null);
-    setPrevStack([]);
+    setPrevCursor(null);
+    setDirection("next");
   };
 
   const goNext = () => {
     if (!nextCursor) return;
-    setPrevStack((stack) => (cursor ? [...stack, cursor] : stack));
+    setDirection("next");
     setCursor(nextCursor);
   };
 
   const goPrev = () => {
-    if (!prevStack.length) return;
-    const stack = [...prevStack];
-    const prev = stack.pop() ?? null;
-    setPrevStack(stack);
-    setCursor(prev);
+    if (!prevCursor) return;
+    setDirection("prev");
+    setCursor(prevCursor);
   };
 
   return (
@@ -365,7 +381,7 @@ export default function HistoryPage() {
               <button
                 type="button"
                 onClick={goPrev}
-                disabled={!prevStack.length}
+                disabled={!prevCursor}
                 className="rounded-lg border border-white/20 bg-white/5 px-3 py-1 text-xs font-semibold text-white disabled:opacity-40"
               >
                 Prev
