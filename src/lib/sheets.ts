@@ -222,9 +222,9 @@ export const appendToSheet = async (
       : undefined;
 
     // If auto-monthly is on, force month-specific handling (do not use base Sheet ID).
-    let spreadsheetId = config?.autoMonthlySheets
-      ? undefined
-      : config?.sheetsId ?? env.googleSheetsId ?? config?.currentSheetId ?? undefined;
+  let spreadsheetId = config?.autoMonthlySheets
+    ? undefined
+    : config?.sheetsId ?? env.googleSheetsId ?? config?.currentSheetId ?? undefined;
 
     if (config?.autoMonthlySheets) {
       const hasCurrent =
@@ -253,8 +253,22 @@ export const appendToSheet = async (
     }
 
     if (!spreadsheetId) {
+    console.warn(
+      "[sheets] No spreadsheetId resolved; autoMonthlySheets=",
+      config?.autoMonthlySheets,
+      "monthKey=",
+      monthKey,
+      "config.currentSheetId=",
+      config?.currentSheetId,
+      "envSheet=",
+      env.googleSheetsId,
+    );
       return;
     }
+
+  console.log(
+    `[sheets] Appending to sheetId=${spreadsheetId} autoMonthly=${config?.autoMonthlySheets ? "yes" : "no"} month=${monthKey ?? "n/a"}`,
+  );
 
     const sheetsClient = await getClient();
     const lockStatus = simplifyLockStatus(info.simLock);

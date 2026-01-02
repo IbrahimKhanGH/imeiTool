@@ -80,11 +80,6 @@ model Credential {
   defaultTab                      String?
   timezone                        String?  @default("America/Chicago")
   syncToSheets                    Boolean  @default(true)
-  autoMonthlySheets               Boolean  @default(false)
-  monthlySheetPrefix              String?
-  currentSheetMonth               String?
-  currentSheetIdEnc               String?
-  monthlyShareEmailsEnc           String?
   createdAt                       DateTime @default(now())
   updatedAt                       DateTime @updatedAt
 }

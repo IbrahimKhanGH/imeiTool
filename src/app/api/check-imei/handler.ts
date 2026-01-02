@@ -171,6 +171,11 @@ export const processLookup = async (
     const baseSheetsId = decryptField(credential?.googleSheetsIdEnc) ?? undefined;
     const monthlySheetId = decryptField(credential?.currentSheetIdEnc) ?? undefined;
 
+    const autoMonthly = credential?.autoMonthlySheets ?? false;
+    console.log(
+      `[sheets] tenant=${context.tenantId} user=${context.userId} autoMonthly=${autoMonthly} baseSheetsId=${baseSheetsId ?? "null"} envSheetsId=${env.googleSheetsId ?? "null"} currentSheetId=${monthlySheetId ?? "null"}`,
+    );
+
     const autoShareEmails: string[] | null = credential?.monthlyShareEmailsEnc
       ? (
           decryptField(credential.monthlyShareEmailsEnc)
@@ -189,7 +194,7 @@ export const processLookup = async (
         decryptField(credential?.googleServiceAccountPrivateKeyEnc) ?? undefined,
       tab: credential?.defaultTab ?? undefined,
       timezone,
-      autoMonthlySheets: credential?.autoMonthlySheets ?? false,
+      autoMonthlySheets: autoMonthly,
       monthlySheetPrefix: credential?.monthlySheetPrefix ?? undefined,
       currentSheetMonth: credential?.currentSheetMonth ?? undefined,
       currentSheetId: monthlySheetId ?? baseSheetsId,
