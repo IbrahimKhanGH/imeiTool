@@ -286,6 +286,7 @@ export const appendToSheet = async (
       "Cost",
       "Carrier",
       "Lock Status",
+      "iCloud Lock",
       "Date",
     ];
 
@@ -305,6 +306,7 @@ export const appendToSheet = async (
             costDisplay, // Our cost (user-supplied)
             info.carrier ?? "", // Carrier
             lockStatus, // Lock Status
+            info.icloudLock ?? info.fmiStatus ?? "", // iCloud Lock
             formatDateForSheet(info.checkedAt, config?.timezone), // Date scanned
           ],
         ],
