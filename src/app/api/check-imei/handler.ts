@@ -205,12 +205,12 @@ export const processLookup = async (
           `[sheets] Created monthly sheet ${monthKey}: https://docs.google.com/spreadsheets/d/${sheetId}/edit`,
         );
         try {
-          await prisma.credential.update({
+          await prisma.credential.updateMany({
             where: { tenantId: context.tenantId },
             data: {
               currentSheetMonth: monthKey,
               currentSheetIdEnc: encryptField(sheetId),
-            },
+            } as any,
           });
         } catch (err) {
           console.error("Failed to persist monthly sheet id", err);
