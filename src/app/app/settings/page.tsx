@@ -32,6 +32,7 @@ export default function SettingsPage() {
   const [autoMonthlySheets, setAutoMonthlySheets] = useState(false);
   const [monthlySheetPrefix, setMonthlySheetPrefix] = useState("");
   const [currentSheetMonth, setCurrentSheetMonth] = useState<string | null>(null);
+  const [currentSheetUrl, setCurrentSheetUrl] = useState<string | null>(null);
   const [autoShareEmails, setAutoShareEmails] = useState("");
 
   useEffect(() => {
@@ -57,6 +58,7 @@ export default function SettingsPage() {
             setAutoMonthlySheets(data.autoMonthlySheets ?? false);
             setMonthlySheetPrefix(data.monthlySheetPrefix ?? "");
             setCurrentSheetMonth(data.currentSheetMonth ?? null);
+            setCurrentSheetUrl(data.currentSheetUrl ?? null);
             setAutoShareEmails(
               Array.isArray(data.autoShareEmails)
                 ? data.autoShareEmails.join(", ")
@@ -153,15 +155,37 @@ export default function SettingsPage() {
           </Link>
         </header>
 
-        {!isAdmin ? (
-          <section className="rounded-3xl border border-white/10 bg-rose-500/10 p-6 text-rose-50 shadow-2xl shadow-rose-500/10 backdrop-blur">
-            <h2 className="text-xl font-semibold">Admins only</h2>
-            <p className="mt-2 text-sm text-rose-100">
-              You are signed in as <span className="font-semibold">{session?.user?.email ?? "user"}</span> ({role}).
-              Ask an admin to adjust credentials or defaults.
+        {!isAdmin && (
+          <section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl shadow-indigo-500/10 backdrop-blur">
+            <h2 className="text-xl font-semibold text-white">Sheets access</h2>
+            <p className="mt-2 text-sm text-slate-300">
+              You can view the latest monthly sheet link below. Ask an admin to change credentials or share targets.
             </p>
+            <div className="mt-4 grid gap-3 text-sm text-slate-200">
+              <div className="rounded-xl border border-white/10 bg-black/30 p-3 shadow-inner shadow-black/20">
+                <div className="text-xs uppercase tracking-wide text-slate-400">Current month</div>
+                <div className="mt-1 font-semibold">{currentSheetMonth ?? "Not created yet"}</div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/30 p-3 shadow-inner shadow-black/20">
+                <div className="text-xs uppercase tracking-wide text-slate-400">Latest monthly sheet</div>
+                {currentSheetUrl ? (
+                  <a
+                    href={currentSheetUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1 inline-flex items-center gap-2 text-emerald-200 underline"
+                  >
+                    Open sheet
+                  </a>
+                ) : (
+                  <div className="mt-1 text-slate-400">Not created yet. Ask an admin to run a scan.</div>
+                )}
+              </div>
+            </div>
           </section>
-        ) : (
+        )}
+
+        {isAdmin && (
           <section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl shadow-fuchsia-500/10 backdrop-blur">
             <div className="flex flex-wrap items-center gap-2 text-xs">
               {statusPill("SickW", health?.sickw.status, health?.sickw.message)}
@@ -258,6 +282,19 @@ export default function SettingsPage() {
                         {currentSheetMonth ? `Current: ${currentSheetMonth}` : "No monthly sheet yet"}
                       </span>
                     </div>
+                    {currentSheetUrl && (
+                      <div className="mt-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
+                        <div className="font-semibold">Latest monthly sheet</div>
+                        <a
+                          href={currentSheetUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-emerald-200 underline"
+                        >
+                          Open sheet
+                        </a>
+                      </div>
+                    )}
                     <label className="mt-3 block text-xs uppercase tracking-wide text-slate-400">
                       Monthly sheet prefix
                     </label>

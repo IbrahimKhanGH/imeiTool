@@ -40,6 +40,10 @@ export async function GET() {
     autoMonthlySheets: cred?.autoMonthlySheets ?? false,
     monthlySheetPrefix: cred?.monthlySheetPrefix ?? "",
     currentSheetMonth: cred?.currentSheetMonth ?? null,
+    currentSheetId: decryptField(cred?.currentSheetIdEnc) ?? null,
+    currentSheetUrl: cred?.currentSheetIdEnc
+      ? `https://docs.google.com/spreadsheets/d/${decryptField(cred.currentSheetIdEnc)}/edit`
+      : null,
     autoShareEmails:
       cred?.monthlyShareEmailsEnc &&
       decryptField(cred.monthlyShareEmailsEnc)
@@ -115,6 +119,10 @@ export async function PUT(req: Request) {
     autoMonthlySheets: updated.autoMonthlySheets,
     monthlySheetPrefix: updated.monthlySheetPrefix ?? "",
     currentSheetMonth: updated.currentSheetMonth ?? null,
+    currentSheetId: decryptField(updated.currentSheetIdEnc) ?? null,
+    currentSheetUrl: updated.currentSheetIdEnc
+      ? `https://docs.google.com/spreadsheets/d/${decryptField(updated.currentSheetIdEnc)}/edit`
+      : null,
     autoShareEmails:
       updated.monthlyShareEmailsEnc &&
       decryptField(updated.monthlyShareEmailsEnc)

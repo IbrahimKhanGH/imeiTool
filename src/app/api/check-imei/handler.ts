@@ -195,6 +195,9 @@ export const processLookup = async (
       currentSheetId: monthlySheetId ?? baseSheetsId,
       autoShareEmails: autoShareEmails?.length ? autoShareEmails : null,
       onMonthlySheetChange: async ({ monthKey, sheetId }) => {
+        console.log(
+          `[sheets] Created monthly sheet ${monthKey}: https://docs.google.com/spreadsheets/d/${sheetId}/edit`,
+        );
         try {
           await prisma.credential.update({
             where: { tenantId: context.tenantId },
