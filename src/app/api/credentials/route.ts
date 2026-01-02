@@ -25,9 +25,27 @@ export async function GET() {
   }
   const { tenantId } = auth;
 
-  const cred = await prisma.credential.findUnique({
-    where: { tenantId },
-  });
+  const rows = (await prisma.$queryRaw`
+    SELECT
+      "sickwKeyEnc",
+      "googleSheetsIdEnc",
+      "googleServiceAccountEmailEnc",
+      "googleServiceAccountPrivateKeyEnc",
+      "defaultTab",
+      "timezone",
+      "syncToSheets",
+      "autoMonthlySheets",
+      "monthlySheetPrefix",
+      "currentSheetMonth",
+      "currentSheetIdEnc",
+      "monthlyShareEmailsEnc"
+    FROM "Credential"
+    WHERE "tenantId" = ${tenantId}
+    LIMIT 1;
+  `) as any[];
+
+  const cred = rows[0];
+
   if (!cred) {
     return NextResponse.json({
       sickwKey: "",
@@ -45,26 +63,25 @@ export async function GET() {
       autoShareEmails: [],
     });
   }
-  const credAny = cred as any;
 
   return NextResponse.json({
-    sickwKey: decryptField(cred?.sickwKeyEnc) ?? "",
-    googleSheetsId: decryptField(cred?.googleSheetsIdEnc) ?? "",
-    googleServiceAccountEmail: decryptField(cred?.googleServiceAccountEmailEnc) ?? "",
-    googleServiceAccountPrivateKey: decryptField(cred?.googleServiceAccountPrivateKeyEnc) ?? "",
-    defaultTab: cred?.defaultTab ?? "",
-    timezone: cred?.timezone ?? "America/Chicago",
-    syncToSheets: cred?.syncToSheets ?? true,
-    autoMonthlySheets: credAny?.autoMonthlySheets ?? false,
-    monthlySheetPrefix: credAny?.monthlySheetPrefix ?? "",
-    currentSheetMonth: credAny?.currentSheetMonth ?? null,
-    currentSheetId: decryptField(credAny?.currentSheetIdEnc) ?? null,
-    currentSheetUrl: credAny?.currentSheetIdEnc
-      ? `https://docs.google.com/spreadsheets/d/${decryptField(credAny.currentSheetIdEnc)}/edit`
+    sickwKey: decryptField(cred.sickwKeyEnc) ?? "",
+    googleSheetsId: decryptField(cred.googleSheetsIdEnc) ?? "",
+    googleServiceAccountEmail: decryptField(cred.googleServiceAccountEmailEnc) ?? "",
+    googleServiceAccountPrivateKey: decryptField(cred.googleServiceAccountPrivateKeyEnc) ?? "",
+    defaultTab: cred.defaultTab ?? "",
+    timezone: cred.timezone ?? "America/Chicago",
+    syncToSheets: cred.syncToSheets ?? true,
+    autoMonthlySheets: cred.autoMonthlySheets ?? false,
+    monthlySheetPrefix: cred.monthlySheetPrefix ?? "",
+    currentSheetMonth: cred.currentSheetMonth ?? null,
+    currentSheetId: decryptField(cred.currentSheetIdEnc) ?? null,
+    currentSheetUrl: cred.currentSheetIdEnc
+      ? `https://docs.google.com/spreadsheets/d/${decryptField(cred.currentSheetIdEnc)}/edit`
       : null,
     autoShareEmails:
-      credAny?.monthlyShareEmailsEnc &&
-      decryptField(credAny.monthlyShareEmailsEnc)
+      cred?.monthlyShareEmailsEnc &&
+      decryptField(cred.monthlyShareEmailsEnc)
         ?.split(",")
         .map((e) => e.trim())
         .filter(Boolean),
