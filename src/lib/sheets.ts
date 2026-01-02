@@ -195,6 +195,7 @@ export const appendToSheet = async (
   info: NormalizedDeviceInfo,
   config?: SheetsConfig,
 ): Promise<void> => {
+  const buildTag = "sheets-version:2026-01-03-01";
   const shouldSync = config?.syncToSheets ?? true;
   const saEmail = config?.serviceAccountEmail ?? env.googleServiceAccountEmail;
   const saKey =
@@ -222,9 +223,9 @@ export const appendToSheet = async (
       : undefined;
 
     // If auto-monthly is on, force month-specific handling (do not use base Sheet ID).
-  let spreadsheetId = config?.autoMonthlySheets
-    ? undefined
-    : config?.sheetsId ?? env.googleSheetsId ?? config?.currentSheetId ?? undefined;
+    let spreadsheetId = config?.autoMonthlySheets
+      ? undefined
+      : config?.sheetsId ?? env.googleSheetsId ?? config?.currentSheetId ?? undefined;
 
     if (config?.autoMonthlySheets) {
       const hasCurrent =
@@ -236,6 +237,9 @@ export const appendToSheet = async (
         const spreadsheetTitle = `${
           config?.monthlySheetPrefix?.trim() || "Lookups"
         } - ${monthKey}`;
+        console.log(
+          `[${buildTag}] Creating monthly sheet title="${spreadsheetTitle}" saEmail=${saEmail}`,
+        );
         spreadsheetId = await createSpreadsheet(client, spreadsheetTitle);
         await shareSpreadsheetIfNeeded(
           spreadsheetId,
@@ -254,20 +258,13 @@ export const appendToSheet = async (
 
   if (!spreadsheetId) {
     console.warn(
-      "[sheets-version:2026-01-03-01] No spreadsheetId resolved; autoMonthlySheets=",
-      config?.autoMonthlySheets,
-      "monthKey=",
-      monthKey,
-      "config.currentSheetId=",
-      config?.currentSheetId,
-      "envSheet=",
-      env.googleSheetsId,
-    );
+        `[${buildTag}] No spreadsheetId resolved; autoMonthlySheets=${config?.autoMonthlySheets} monthKey=${monthKey} currentSheetId=${config?.currentSheetId} envSheet=${env.googleSheetsId}`,
+      );
     return;
   }
 
   console.log(
-    `[sheets-version:2026-01-03-01] Appending to sheetId=${spreadsheetId} autoMonthly=${config?.autoMonthlySheets ? "yes" : "no"} month=${monthKey ?? "n/a"}`,
+    `[${buildTag}] Appending to sheetId=${spreadsheetId} autoMonthly=${config?.autoMonthlySheets ? "yes" : "no"} month=${monthKey ?? "n/a"} saEmail=${saEmail}`,
   );
 
     const sheetsClient = await getClient();
