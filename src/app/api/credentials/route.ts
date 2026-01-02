@@ -102,11 +102,20 @@ export async function PUT(req: Request) {
     ),
   };
 
-  const updated = await prisma.credential.upsert({
-    where: { tenantId },
-    create: { tenantId, ...data },
-    update: data as any,
-  });
+  let updated;
+  try {
+    updated = await prisma.credential.upsert({
+      where: { tenantId },
+      create: { tenantId, ...data },
+      update: data as any,
+    });
+  } catch (err) {
+    console.error("Failed to save credentials", err);
+    return NextResponse.json(
+      { error: "Failed to save credentials", detail: err instanceof Error ? err.message : String(err) },
+      { status: 500 },
+    );
+  }
   const updatedAny = updated as any;
 
   return NextResponse.json({
