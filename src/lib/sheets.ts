@@ -252,9 +252,9 @@ export const appendToSheet = async (
       }
     }
 
-    if (!spreadsheetId) {
+  if (!spreadsheetId) {
     console.warn(
-      "[sheets] No spreadsheetId resolved; autoMonthlySheets=",
+      "[sheets-version:2026-01-03-01] No spreadsheetId resolved; autoMonthlySheets=",
       config?.autoMonthlySheets,
       "monthKey=",
       monthKey,
@@ -263,11 +263,11 @@ export const appendToSheet = async (
       "envSheet=",
       env.googleSheetsId,
     );
-      return;
-    }
+    return;
+  }
 
   console.log(
-    `[sheets] Appending to sheetId=${spreadsheetId} autoMonthly=${config?.autoMonthlySheets ? "yes" : "no"} month=${monthKey ?? "n/a"}`,
+    `[sheets-version:2026-01-03-01] Appending to sheetId=${spreadsheetId} autoMonthly=${config?.autoMonthlySheets ? "yes" : "no"} month=${monthKey ?? "n/a"}`,
   );
 
     const sheetsClient = await getClient();

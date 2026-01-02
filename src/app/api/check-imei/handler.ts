@@ -188,9 +188,10 @@ export const processLookup = async (
     const baseSheetsId = decryptField(credAny?.googleSheetsIdEnc) ?? undefined;
     const monthlySheetId = decryptField(credAny?.currentSheetIdEnc) ?? undefined;
 
+    const buildTag = "sheets-version:2026-01-03-01";
     const autoMonthly = credAny?.autoMonthlySheets ?? true;
     console.log(
-      `[sheets] tenant=${context.tenantId} user=${context.userId} autoMonthly=${autoMonthly} rawAutoMonthly=${credAny?.autoMonthlySheets} baseSheetsId=${baseSheetsId ?? "null"} envSheetsId=${env.googleSheetsId ?? "null"} currentSheetId=${monthlySheetId ?? "null"}`,
+      `[${buildTag}] tenant=${context.tenantId} user=${context.userId} autoMonthly=${autoMonthly} rawAutoMonthly=${credAny?.autoMonthlySheets} baseSheetsId=${baseSheetsId ?? "null"} envSheetsId=${env.googleSheetsId ?? "null"} currentSheetId=${monthlySheetId ?? "null"}`,
     );
 
     const autoShareEmails: string[] | null = credAny?.monthlyShareEmailsEnc
@@ -218,7 +219,7 @@ export const processLookup = async (
       autoShareEmails: autoShareEmails?.length ? autoShareEmails : null,
       onMonthlySheetChange: async ({ monthKey, sheetId }) => {
         console.log(
-          `[sheets] Created monthly sheet ${monthKey}: https://docs.google.com/spreadsheets/d/${sheetId}/edit`,
+          `[${buildTag}] Created monthly sheet ${monthKey}: https://docs.google.com/spreadsheets/d/${sheetId}/edit`,
         );
         try {
           await prisma.credential.updateMany({
