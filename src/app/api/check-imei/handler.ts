@@ -188,9 +188,9 @@ export const processLookup = async (
     const baseSheetsId = decryptField(credAny?.googleSheetsIdEnc) ?? undefined;
     const monthlySheetId = decryptField(credAny?.currentSheetIdEnc) ?? undefined;
 
-    const autoMonthly = credAny?.autoMonthlySheets ?? false;
+    const autoMonthly = credAny?.autoMonthlySheets ?? true;
     console.log(
-      `[sheets] tenant=${context.tenantId} user=${context.userId} autoMonthly=${autoMonthly} baseSheetsId=${baseSheetsId ?? "null"} envSheetsId=${env.googleSheetsId ?? "null"} currentSheetId=${monthlySheetId ?? "null"}`,
+      `[sheets] tenant=${context.tenantId} user=${context.userId} autoMonthly=${autoMonthly} rawAutoMonthly=${credAny?.autoMonthlySheets} baseSheetsId=${baseSheetsId ?? "null"} envSheetsId=${env.googleSheetsId ?? "null"} currentSheetId=${monthlySheetId ?? "null"}`,
     );
 
     const autoShareEmails: string[] | null = credAny?.monthlyShareEmailsEnc
