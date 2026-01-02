@@ -28,6 +28,23 @@ export async function GET() {
   const cred = await prisma.credential.findUnique({
     where: { tenantId },
   });
+  if (!cred) {
+    return NextResponse.json({
+      sickwKey: "",
+      googleSheetsId: "",
+      googleServiceAccountEmail: "",
+      googleServiceAccountPrivateKey: "",
+      defaultTab: "",
+      timezone: "America/Chicago",
+      syncToSheets: true,
+      autoMonthlySheets: false,
+      monthlySheetPrefix: "",
+      currentSheetMonth: null,
+      currentSheetId: null,
+      currentSheetUrl: null,
+      autoShareEmails: [],
+    });
+  }
   const credAny = cred as any;
 
   return NextResponse.json({
