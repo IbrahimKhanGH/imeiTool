@@ -119,13 +119,52 @@ export async function PUT(req: Request) {
     ),
   };
 
-  let updated;
   try {
-    updated = await prisma.credential.upsert({
-      where: { tenantId },
-      create: { tenantId, ...data },
-      update: data as any,
-    });
+    await prisma.$executeRaw`
+      INSERT INTO "Credential" (
+        "id",
+        "tenantId",
+        "sickwKeyEnc",
+        "googleSheetsIdEnc",
+        "googleServiceAccountEmailEnc",
+        "googleServiceAccountPrivateKeyEnc",
+        "defaultTab",
+        "timezone",
+        "syncToSheets",
+        "autoMonthlySheets",
+        "monthlySheetPrefix",
+        "monthlyShareEmailsEnc",
+        "updatedAt",
+        "createdAt"
+      ) VALUES (
+        ${tenantId},
+        ${tenantId},
+        ${data.sickwKeyEnc},
+        ${data.googleSheetsIdEnc},
+        ${data.googleServiceAccountEmailEnc},
+        ${data.googleServiceAccountPrivateKeyEnc},
+        ${data.defaultTab},
+        ${data.timezone},
+        ${data.syncToSheets},
+        ${data.autoMonthlySheets},
+        ${data.monthlySheetPrefix},
+        ${data.monthlyShareEmailsEnc},
+        now(),
+        now()
+      )
+      ON CONFLICT ("tenantId") DO UPDATE SET
+        "sickwKeyEnc" = EXCLUDED."sickwKeyEnc",
+        "googleSheetsIdEnc" = EXCLUDED."googleSheetsIdEnc",
+        "googleServiceAccountEmailEnc" = EXCLUDED."googleServiceAccountEmailEnc",
+        "googleServiceAccountPrivateKeyEnc" = EXCLUDED."googleServiceAccountPrivateKeyEnc",
+        "defaultTab" = EXCLUDED."defaultTab",
+        "timezone" = EXCLUDED."timezone",
+        "syncToSheets" = EXCLUDED."syncToSheets",
+        "autoMonthlySheets" = EXCLUDED."autoMonthlySheets",
+        "monthlySheetPrefix" = EXCLUDED."monthlySheetPrefix",
+        "monthlyShareEmailsEnc" = EXCLUDED."monthlyShareEmailsEnc",
+        "updatedAt" = now();
+    `;
   } catch (err) {
     console.error("Failed to save credentials", err);
     return NextResponse.json(
@@ -133,17 +172,37 @@ export async function PUT(req: Request) {
       { status: 500 },
     );
   }
-  const updatedAny = updated as any;
+
+  const rows = (await prisma.$queryRaw`
+    SELECT
+      "sickwKeyEnc",
+      "googleSheetsIdEnc",
+      "googleServiceAccountEmailEnc",
+      "googleServiceAccountPrivateKeyEnc",
+      "defaultTab",
+      "timezone",
+      "syncToSheets",
+      "autoMonthlySheets",
+      "monthlySheetPrefix",
+      "currentSheetMonth",
+      "currentSheetIdEnc",
+      "monthlyShareEmailsEnc"
+    FROM "Credential"
+    WHERE "tenantId" = ${tenantId}
+    LIMIT 1;
+  `) as any[];
+
+  const updatedAny = rows[0] ?? {};
 
   return NextResponse.json({
-    sickwKey: decryptField(updated.sickwKeyEnc) ?? "",
-    googleSheetsId: decryptField(updated.googleSheetsIdEnc) ?? "",
-    googleServiceAccountEmail: decryptField(updated.googleServiceAccountEmailEnc) ?? "",
+    sickwKey: decryptField(updatedAny.sickwKeyEnc) ?? "",
+    googleSheetsId: decryptField(updatedAny.googleSheetsIdEnc) ?? "",
+    googleServiceAccountEmail: decryptField(updatedAny.googleServiceAccountEmailEnc) ?? "",
     googleServiceAccountPrivateKey:
-      decryptField(updated.googleServiceAccountPrivateKeyEnc) ?? "",
-    defaultTab: updated.defaultTab ?? "",
-    timezone: updated.timezone ?? "America/Chicago",
-    syncToSheets: updated.syncToSheets,
+      decryptField(updatedAny.googleServiceAccountPrivateKeyEnc) ?? "",
+    defaultTab: updatedAny.defaultTab ?? "",
+    timezone: updatedAny.timezone ?? "America/Chicago",
+    syncToSheets: updatedAny.syncToSheets ?? true,
     autoMonthlySheets: updatedAny?.autoMonthlySheets ?? false,
     monthlySheetPrefix: updatedAny?.monthlySheetPrefix ?? "",
     currentSheetMonth: updatedAny?.currentSheetMonth ?? null,
