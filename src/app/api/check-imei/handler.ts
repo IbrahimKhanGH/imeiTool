@@ -107,9 +107,72 @@ export const processLookup = async (
         hydrated.userCost = body.cost;
       }
 
+      const credRowsCache = (await prisma.$queryRaw`
+        SELECT
+          "sickwKeyEnc",
+          "googleSheetsIdEnc",
+          "googleServiceAccountEmailEnc",
+          "googleServiceAccountPrivateKeyEnc",
+          "defaultTab",
+          "timezone",
+          "syncToSheets",
+          "autoMonthlySheets",
+          "monthlySheetPrefix",
+          "currentSheetMonth",
+          "currentSheetIdEnc",
+          "monthlyShareEmailsEnc"
+        FROM "Credential"
+        WHERE "tenantId" = ${context.tenantId}
+        LIMIT 1;
+      `) as any[];
+      const credCache = credRowsCache[0] ?? {};
+      const baseSheetsIdCache = decryptField(credCache?.googleSheetsIdEnc) ?? undefined;
+      const monthlySheetIdCache = decryptField(credCache?.currentSheetIdEnc) ?? undefined;
+      const autoMonthlyCache = credCache?.autoMonthlySheets ?? true;
+      const autoShareEmailsCache: string[] | null = credCache?.monthlyShareEmailsEnc
+        ? (
+            decryptField(credCache.monthlyShareEmailsEnc)
+              ?.split(",")
+              .map((e) => e.trim())
+              .filter(Boolean) ?? []
+          )
+        : null;
+      const buildTagCache = "sheets-version:2026-01-03-01";
+
       await appendToSheet(hydrated, {
-        syncToSheets: true,
+        syncToSheets: credCache?.syncToSheets ?? true,
+        sheetsId: autoMonthlyCache ? undefined : baseSheetsIdCache,
+        serviceAccountEmail:
+          decryptField(credCache?.googleServiceAccountEmailEnc) ?? undefined,
+        serviceAccountPrivateKey:
+          decryptField(credCache?.googleServiceAccountPrivateKeyEnc) ?? undefined,
+        tab: credCache?.defaultTab ?? undefined,
+        timezone: credCache?.timezone ?? "America/Chicago",
+        autoMonthlySheets: autoMonthlyCache,
+        monthlySheetPrefix: credCache?.monthlySheetPrefix ?? undefined,
+        currentSheetMonth: credCache?.currentSheetMonth ?? undefined,
+        currentSheetId: autoMonthlyCache ? monthlySheetIdCache : baseSheetsIdCache,
+        autoShareEmails: autoShareEmailsCache?.length ? autoShareEmailsCache : null,
+        onMonthlySheetChange: async ({ monthKey, sheetId }) => {
+          console.log(
+            `[${buildTagCache}] Created monthly sheet ${monthKey}: https://docs.google.com/spreadsheets/d/${sheetId}/edit`,
+          );
+          try {
+            await prisma.credential.updateMany({
+              where: { tenantId: context.tenantId },
+              data: {
+                currentSheetMonth: monthKey,
+                currentSheetIdEnc: encryptField(sheetId),
+              } as any,
+            });
+          } catch (err) {
+            console.error("Failed to persist monthly sheet id", err);
+          }
+        },
       });
+      console.log(
+        `[${buildTagCache}] cache-append tenant=${context.tenantId} user=${context.userId} autoMonthly=${autoMonthlyCache} rawAutoMonthly=${credCache?.autoMonthlySheets} baseSheetsId=${baseSheetsIdCache ?? "null"} envSheetsId=${env.googleSheetsId ?? "null"} currentSheetId=${monthlySheetIdCache ?? "null"}`,
+      );
       logStep("cache-hit-sheets-append");
 
       return { source: "cache", data: hydrated };
