@@ -202,13 +202,13 @@ export const processLookup = async (
       : null;
 
     await appendToSheet(fresh, {
-      syncToSheets: credential?.syncToSheets ?? true,
+      syncToSheets: credAny?.syncToSheets ?? true,
       sheetsId: baseSheetsId,
       serviceAccountEmail:
-        decryptField(credential?.googleServiceAccountEmailEnc) ?? undefined,
+        decryptField(credAny?.googleServiceAccountEmailEnc) ?? undefined,
       serviceAccountPrivateKey:
-        decryptField(credential?.googleServiceAccountPrivateKeyEnc) ?? undefined,
-      tab: credential?.defaultTab ?? undefined,
+        decryptField(credAny?.googleServiceAccountPrivateKeyEnc) ?? undefined,
+      tab: credAny?.defaultTab ?? undefined,
       timezone,
       autoMonthlySheets: autoMonthly,
       monthlySheetPrefix: credAny?.monthlySheetPrefix ?? undefined,
