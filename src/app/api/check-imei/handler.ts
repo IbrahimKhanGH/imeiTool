@@ -205,7 +205,7 @@ export const processLookup = async (
 
     await appendToSheet(fresh, {
       syncToSheets: credAny?.syncToSheets ?? true,
-      sheetsId: baseSheetsId,
+      sheetsId: autoMonthly ? undefined : baseSheetsId,
       serviceAccountEmail:
         decryptField(credAny?.googleServiceAccountEmailEnc) ?? undefined,
       serviceAccountPrivateKey:
@@ -215,7 +215,7 @@ export const processLookup = async (
       autoMonthlySheets: autoMonthly,
       monthlySheetPrefix: credAny?.monthlySheetPrefix ?? undefined,
       currentSheetMonth: credAny?.currentSheetMonth ?? undefined,
-      currentSheetId: monthlySheetId ?? baseSheetsId,
+      currentSheetId: autoMonthly ? monthlySheetId : baseSheetsId,
       autoShareEmails: autoShareEmails?.length ? autoShareEmails : null,
       onMonthlySheetChange: async ({ monthKey, sheetId }) => {
         console.log(
