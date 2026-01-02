@@ -28,6 +28,7 @@ export async function GET() {
   const cred = await prisma.credential.findUnique({
     where: { tenantId },
   });
+  const credAny = cred as any;
 
   return NextResponse.json({
     sickwKey: decryptField(cred?.sickwKeyEnc) ?? "",
@@ -37,16 +38,16 @@ export async function GET() {
     defaultTab: cred?.defaultTab ?? "",
     timezone: cred?.timezone ?? "America/Chicago",
     syncToSheets: cred?.syncToSheets ?? true,
-    autoMonthlySheets: cred?.autoMonthlySheets ?? false,
-    monthlySheetPrefix: cred?.monthlySheetPrefix ?? "",
-    currentSheetMonth: cred?.currentSheetMonth ?? null,
-    currentSheetId: decryptField(cred?.currentSheetIdEnc) ?? null,
-    currentSheetUrl: cred?.currentSheetIdEnc
-      ? `https://docs.google.com/spreadsheets/d/${decryptField(cred.currentSheetIdEnc)}/edit`
+    autoMonthlySheets: credAny?.autoMonthlySheets ?? false,
+    monthlySheetPrefix: credAny?.monthlySheetPrefix ?? "",
+    currentSheetMonth: credAny?.currentSheetMonth ?? null,
+    currentSheetId: decryptField(credAny?.currentSheetIdEnc) ?? null,
+    currentSheetUrl: credAny?.currentSheetIdEnc
+      ? `https://docs.google.com/spreadsheets/d/${decryptField(credAny.currentSheetIdEnc)}/edit`
       : null,
     autoShareEmails:
-      cred?.monthlyShareEmailsEnc &&
-      decryptField(cred.monthlyShareEmailsEnc)
+      credAny?.monthlyShareEmailsEnc &&
+      decryptField(credAny.monthlyShareEmailsEnc)
         ?.split(",")
         .map((e) => e.trim())
         .filter(Boolean),
@@ -104,8 +105,9 @@ export async function PUT(req: Request) {
   const updated = await prisma.credential.upsert({
     where: { tenantId },
     create: { tenantId, ...data },
-    update: data,
+    update: data as any,
   });
+  const updatedAny = updated as any;
 
   return NextResponse.json({
     sickwKey: decryptField(updated.sickwKeyEnc) ?? "",
@@ -116,16 +118,16 @@ export async function PUT(req: Request) {
     defaultTab: updated.defaultTab ?? "",
     timezone: updated.timezone ?? "America/Chicago",
     syncToSheets: updated.syncToSheets,
-    autoMonthlySheets: updated.autoMonthlySheets,
-    monthlySheetPrefix: updated.monthlySheetPrefix ?? "",
-    currentSheetMonth: updated.currentSheetMonth ?? null,
-    currentSheetId: decryptField(updated.currentSheetIdEnc) ?? null,
-    currentSheetUrl: updated.currentSheetIdEnc
-      ? `https://docs.google.com/spreadsheets/d/${decryptField(updated.currentSheetIdEnc)}/edit`
+    autoMonthlySheets: updatedAny?.autoMonthlySheets ?? false,
+    monthlySheetPrefix: updatedAny?.monthlySheetPrefix ?? "",
+    currentSheetMonth: updatedAny?.currentSheetMonth ?? null,
+    currentSheetId: decryptField(updatedAny.currentSheetIdEnc) ?? null,
+    currentSheetUrl: updatedAny.currentSheetIdEnc
+      ? `https://docs.google.com/spreadsheets/d/${decryptField(updatedAny.currentSheetIdEnc)}/edit`
       : null,
     autoShareEmails:
-      updated.monthlyShareEmailsEnc &&
-      decryptField(updated.monthlyShareEmailsEnc)
+      updatedAny?.monthlyShareEmailsEnc &&
+      decryptField(updatedAny.monthlyShareEmailsEnc)
         ?.split(",")
         .map((e) => e.trim())
         .filter(Boolean),
