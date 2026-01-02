@@ -221,8 +221,10 @@ export const appendToSheet = async (
       ? formatMonthKey(info.checkedAt, config?.timezone)
       : undefined;
 
-    let spreadsheetId =
-      config?.sheetsId ?? env.googleSheetsId ?? config?.currentSheetId ?? undefined;
+    // If auto-monthly is on, force month-specific handling (do not use base Sheet ID).
+    let spreadsheetId = config?.autoMonthlySheets
+      ? undefined
+      : config?.sheetsId ?? env.googleSheetsId ?? config?.currentSheetId ?? undefined;
 
     if (config?.autoMonthlySheets) {
       const hasCurrent =
