@@ -120,6 +120,7 @@ export const processLookup = async (
     });
 
     const apiKey = decryptField(credential?.sickwKeyEnc) || env.sickwApiKey;
+    const credAny = credential as any;
 
     const fresh = await querySickW(
       {
@@ -169,16 +170,16 @@ export const processLookup = async (
 
     const timezone = credential?.timezone ?? "America/Chicago";
     const baseSheetsId = decryptField(credential?.googleSheetsIdEnc) ?? undefined;
-    const monthlySheetId = decryptField(credential?.currentSheetIdEnc) ?? undefined;
+    const monthlySheetId = decryptField(credAny?.currentSheetIdEnc) ?? undefined;
 
-    const autoMonthly = credential?.autoMonthlySheets ?? false;
+    const autoMonthly = credAny?.autoMonthlySheets ?? false;
     console.log(
       `[sheets] tenant=${context.tenantId} user=${context.userId} autoMonthly=${autoMonthly} baseSheetsId=${baseSheetsId ?? "null"} envSheetsId=${env.googleSheetsId ?? "null"} currentSheetId=${monthlySheetId ?? "null"}`,
     );
 
-    const autoShareEmails: string[] | null = credential?.monthlyShareEmailsEnc
+    const autoShareEmails: string[] | null = credAny?.monthlyShareEmailsEnc
       ? (
-          decryptField(credential.monthlyShareEmailsEnc)
+          decryptField(credAny.monthlyShareEmailsEnc)
             ?.split(",")
             .map((e) => e.trim())
             .filter(Boolean) ?? []
@@ -195,8 +196,8 @@ export const processLookup = async (
       tab: credential?.defaultTab ?? undefined,
       timezone,
       autoMonthlySheets: autoMonthly,
-      monthlySheetPrefix: credential?.monthlySheetPrefix ?? undefined,
-      currentSheetMonth: credential?.currentSheetMonth ?? undefined,
+      monthlySheetPrefix: credAny?.monthlySheetPrefix ?? undefined,
+      currentSheetMonth: credAny?.currentSheetMonth ?? undefined,
       currentSheetId: monthlySheetId ?? baseSheetsId,
       autoShareEmails: autoShareEmails?.length ? autoShareEmails : null,
       onMonthlySheetChange: async ({ monthKey, sheetId }) => {
