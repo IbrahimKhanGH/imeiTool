@@ -115,12 +115,27 @@ export const processLookup = async (
     }
 
     logStep("calling-sickw");
-    const credential = await prisma.credential.findUnique({
-      where: { tenantId: context.tenantId },
-    });
+    const credRows = (await prisma.$queryRaw`
+      SELECT
+        "sickwKeyEnc",
+        "googleSheetsIdEnc",
+        "googleServiceAccountEmailEnc",
+        "googleServiceAccountPrivateKeyEnc",
+        "defaultTab",
+        "timezone",
+        "syncToSheets",
+        "autoMonthlySheets",
+        "monthlySheetPrefix",
+        "currentSheetMonth",
+        "currentSheetIdEnc",
+        "monthlyShareEmailsEnc"
+      FROM "Credential"
+      WHERE "tenantId" = ${context.tenantId}
+      LIMIT 1;
+    `) as any[];
+    const credAny = credRows[0] ?? {};
 
-    const apiKey = decryptField(credential?.sickwKeyEnc) || env.sickwApiKey;
-    const credAny = credential as any;
+    const apiKey = decryptField(credAny?.sickwKeyEnc) || env.sickwApiKey;
 
     const fresh = await querySickW(
       {
@@ -168,8 +183,8 @@ export const processLookup = async (
     });
     logStep("db-write");
 
-    const timezone = credential?.timezone ?? "America/Chicago";
-    const baseSheetsId = decryptField(credential?.googleSheetsIdEnc) ?? undefined;
+    const timezone = credAny?.timezone ?? "America/Chicago";
+    const baseSheetsId = decryptField(credAny?.googleSheetsIdEnc) ?? undefined;
     const monthlySheetId = decryptField(credAny?.currentSheetIdEnc) ?? undefined;
 
     const autoMonthly = credAny?.autoMonthlySheets ?? false;
